@@ -1,9 +1,10 @@
 # mj-social-ad-resizer
 
-Free agent skill that turns your own photo into on-brand social images and ads for Meta (Facebook/Instagram), LinkedIn, X and Pinterest.
+Free agent skill that turns your website and photos into on-brand social images and ads for Meta (Facebook/Instagram), LinkedIn, X and Pinterest.
 
 - **Plain mode:** crops and resizes your photo for every placement you pick.
-- **Ad mode:** reads your website's look (colors, fonts, gradients, background patterns, button style) and builds ads that match it.
+- **Ad mode:** reads your website's look (colors, fonts, gradients, background patterns, button style) **and its layout patterns** (centered or left-aligned, photo shapes, frames, dividers, label and link styles), so each brand gets its own structure.
+- **No photo? No problem:** use photos from your own site, or go photo-free with menu-style cards, typographic posters or stat tiles.
 - **Concepts first:** see 3–4 layout directions side by side, pick one, then every size is rendered in that style.
 - Optional **A/B variants** and **post text for each platform** (captions, alt text, hashtags, UTM links).
 - Exports **PNG, JPG or WebP** to a folder you choose, with a contact sheet and a `manifest.json`.
@@ -42,6 +43,12 @@ Attach your photo and ask, for example:
 
 For the best crops, attach **two photos**: one landscape (wide) and one portrait (tall), each at least **1080 px** on the short side. One photo also works.
 
+**No photo?** Just give the website:
+
+> Make Meta ads for glpkitchen.com. Headline: "What to eat when you don't feel like eating." No photo.
+
+Claude offers photos from your own site, or photo-free designs.
+
 ### 2. Answer a few questions
 
 Claude asks only for what you haven't already given it:
@@ -50,7 +57,7 @@ Claude asks only for what you haven't already given it:
 |---|---|
 | Platforms | Any of Meta (Facebook/Instagram), LinkedIn, X, Pinterest |
 | Plain image or ad? | **Plain** = just resized photos. **Ad** = on-brand design with headline and button |
-| Ad copy | Headline, optional subhead, call to action, and who the ad is for |
+| Ad copy | Headline, optional subhead, call to action, and who the ad is for. Add key numbers (e.g. "11.6 g protein per 100 cal", "+134% lift") to get stat tiles or menu-style fact rows |
 | Branding | Your website URL. Brand guidelines, a logo (PNG with transparent background) and font files are optional extras |
 | A/B variants? | Yes = Claude writes 2–3 headline versions for you to approve |
 | Post text for each platform? | Yes = captions, hashtags, alt text and pin titles |
@@ -58,7 +65,12 @@ Claude asks only for what you haven't already given it:
 
 ### 3. Check the brand summary
 
-Claude reads your site and sums up what it found, for example: *"Black headlines with a blue → violet → amber gradient on the key words, white background with a faint blue grid, black pill buttons."* Correct anything that's off.
+Claude reads your site and sums up both the look and the layout patterns, for example:
+
+- *marianajohnels.com:* "Left-aligned, black headlines with a blue → violet → amber gradient on the key words, white background with a faint blue grid, rounded photos, pastel stat tiles, black pill buttons."
+- *glpkitchen.com:* "Centered menu-card style: cream paper card with a double rule on espresso, serif headline, italic tagline, small caps labels, ornament divider, red text-link CTA."
+
+Correct anything that's off.
 
 Sites built with JavaScript read best when Claude has a browser tool. Without one, Claude may ask for a screenshot of your homepage.
 
@@ -66,14 +78,18 @@ Sites built with JavaScript read best when Claude has a browser tool. Without on
 
 ### 4. Pick a concept
 
-You get a concept sheet with up to four directions at one size:
+You get a concept sheet with 3–4 directions at one size. Claude picks them to fit your brand's layout patterns:
 
-| Concept | Look |
-|---|---|
-| Editorial | Your site's background (grid, glows), headline on top, photo below |
-| Full bleed | Photo fills the frame, dark gradient behind white text |
-| Split panel | Brand panel on one side, photo on the other |
-| Color band | Photo with a solid brand-color band holding the text |
+| Concept | Look | Needs a photo |
+|---|---|---|
+| Editorial | Your site's background, headline on top, photo below (in your photo shape) | yes |
+| Full bleed | Photo fills the frame, dark gradient behind the text | yes |
+| Split panel | Brand panel on one side, photo on the other | yes |
+| Color band | Photo with a solid brand-color band holding the text | yes |
+| Card | A paper or white card over the photo or a dark background, with your frame, divider and fact rows | optional |
+| Centered | Symmetrical stack, photo in your brand's shape, or a typographic poster | optional |
+| Stat tiles | Headline plus big-number tiles in your colors | no |
+| Type only | A large headline on your brand background | no |
 
 Pick one, or ask for changes ("put *together* in the gradient", "use the gradient on the button"). Nothing else is rendered until you approve.
 
@@ -153,8 +169,10 @@ Platforms change their specs from time to time; tell Claude if you need a differ
 skills/mj-social-ad-resizer/
   SKILL.md                  Instructions Claude follows
   scripts/make_images.py    Crops, resizes, adds text, writes the files
-  scripts/fetch_font.py     Downloads Google Fonts for the brand profile
+  scripts/fetch_font.py     Downloads Google Fonts (upright + italic) for the brand profile
+  scripts/fetch_site_images.py  Downloads photos from your own site when you have none
   references/brand.md       How the brand profile is read from a website
+  references/layouts.md     The layouts, layout DNA, and how concepts are chosen
   references/placements.md  Sizes, safe zones, caption limits
   references/spec.md        Settings the script accepts
   assets/fonts/             Inter (default font) and its license

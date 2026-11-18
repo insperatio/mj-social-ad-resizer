@@ -1,15 +1,15 @@
 #!/usr/bin/env python3
 """
-Download a Google Font by family name for use in the brand profile.
+Download a Google Font family (upright and italic) for the brand profile.
 
 Usage:
-    python3 fetch_font.py "Playfair Display" OUT_DIR
+    python3 fetch_font.py "Vollkorn" OUT_DIR
 
-Tries the google/fonts GitHub repo (ofl/, apache/, ufl/ folders), static
-or variable files. Prints JSON: {"ok": true, "path": ..., "variable": bool,
-"weights": [...]} or {"ok": false, "reason": ...}. If it fails (no network,
-or the font isn't a Google Font), use the bundled Inter or ask the user to
-upload the font files.
+Looks in the google/fonts GitHub repo (ofl/, apache/, ufl/). Prints JSON:
+{"ok": true, "files": [{"path", "italic", "variable", "weights"}]}
+or {"ok": false, "reason": ...}. Variable fonts are used in brand.json as
+{"path": ..., "variation": "Bold"}. If this fails (no network, or not a
+Google Font), use the bundled Inter or ask the user for the font files.
 """
 import json
 import os
@@ -28,45 +28,49 @@ def get(url, binary=False):
     return data if binary else data.decode()
 
 
+def describe(path, name):
+    weights = []
+    try:
+        from PIL import ImageFont
+        weights = [n.decode() if isinstance(n, bytes) else n
+                   for n in ImageFont.truetype(path, 20).get_variation_names()]
+    except Exception:
+        pass
+    return {"path": path, "italic": "Italic" in name, "variable": "[" in name, "weights": weights}
+
+
 def main(family, out_dir):
     slug = family.lower().replace(" ", "")
     camel = family.replace(" ", "")
     os.makedirs(out_dir, exist_ok=True)
-    candidates = []
+    guesses = []
+    for axes in ("wght", "opsz,wght", "wdth,wght"):
+        guesses += [f"{camel}[{axes}].ttf", f"{camel}-Italic[{axes}].ttf"]
+    guesses += [f"{camel}-Regular.ttf", f"{camel}-Bold.ttf", f"{camel}-Italic.ttf"]
     for lic in ("ofl", "apache", "ufl"):
-        # 1) ask the GitHub API for the folder listing (may be rate limited)
+        names = []
         try:
             listing = json.loads(get(API.format(lic=lic, slug=slug)))
-            names = [i["name"] for i in listing if i["name"].endswith(".ttf")]
-            names.sort(key=lambda n: ("Italic" in n, "[" not in n))
-            candidates += [(lic, n) for n in names]
-            if names:
-                break
+            ttf = [i["name"] for i in listing if i["name"].endswith(".ttf")]
+            var = [n for n in ttf if "[" in n]
+            names = var or [n for n in ttf if any(w in n for w in ("Regular", "Bold", "Italic", "SemiBold"))][:6]
         except Exception:
-            pass
-        # 2) guess common file names
-        for n in (f"{camel}[wght].ttf", f"{camel}[opsz,wght].ttf", f"{camel}[wdth,wght].ttf",
-                  f"{camel}-Bold.ttf", f"{camel}-Regular.ttf"):
-            candidates.append((lic, n))
-    for lic, name in candidates:
-        try:
-            data = get(RAW.format(lic=lic, slug=slug, file=quote(name)), binary=True)
-        except Exception:
-            continue
-        if len(data) < 1000:
-            continue
-        path = os.path.join(out_dir, name.replace("[", "_").replace("]", "").replace(",", "_"))
-        with open(path, "wb") as f:
-            f.write(data)
-        weights = []
-        try:
-            from PIL import ImageFont
-            weights = [n.decode() if isinstance(n, bytes) else n for n in ImageFont.truetype(path, 20).get_variation_names()]
-        except Exception:
-            pass
-        print(json.dumps({"ok": True, "family": family, "path": path, "variable": "[" in name,
-                          "weights": weights, "license": lic.upper()}))
-        return
+            names = guesses
+        files = []
+        for name in names:
+            try:
+                data = get(RAW.format(lic=lic, slug=slug, file=quote(name)), binary=True)
+            except Exception:
+                continue
+            if len(data) < 1000:
+                continue
+            path = os.path.join(out_dir, name.replace("[", "_").replace("]", "").replace(",", "_"))
+            with open(path, "wb") as f:
+                f.write(data)
+            files.append(describe(path, name))
+        if files:
+            print(json.dumps({"ok": True, "family": family, "license": lic.upper(), "files": files}, indent=1))
+            return
     print(json.dumps({"ok": False, "family": family,
                       "reason": "Not found on Google Fonts or no network access. Use the bundled Inter or ask the user for the font files."}))
 

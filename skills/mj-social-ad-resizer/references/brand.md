@@ -25,11 +25,13 @@ JSON.stringify({ title: document.title, vars, fonts: [...new Set([...document.fo
   body: pick('body'), h1: pick('h1'), h2: pick('h2'), p: pick('main p, p'), buttons, grads }, null, 1);
 ```
 
-Also take a screenshot of the top of the page. Use it to:
+Also take a screenshot of the top of the page, and scroll to see the main content blocks. Use them to:
 - judge which colors dominate
 - see whether headline words are gradient-filled
 - spot tag pills, dots and other motifs
 - find a background grid or soft glows
+- read the **layout DNA**: alignment, image shapes, frames, dividers, label style, button style (see `layouts.md`)
+- list the page's images (`[...document.images].map(i => [i.currentSrc, i.naturalWidth, i.naturalHeight])`) in case the user has no photo
 
 ### With web fetch
 Fetch the page and its linked CSS. Look for `:root` variables, `font-family`, Google Fonts links, `linear-gradient`, `border-radius` and button classes.
@@ -57,11 +59,19 @@ Ask the user for a homepage screenshot or their brand guidelines.
 | `headline_tracking` | Letter spacing in em (negative = tighter) | `-0.025` |
 | `headline_leading` | Line height as a multiple of font size | `1.08` |
 | `headline_case` | `"none"` or `"upper"` | `"none"` |
-| `button.style` | `"solid"` (primary color), `"gradient"` (brand gradient) | `"solid"` |
+| `button.style` | `"solid"` (primary color), `"gradient"` (brand gradient), `"outline"`, `"link"` (underlined uppercase text link) | `"solid"` |
 | `button.radius` | `"pill"` or a number of px | `"pill"` |
-| `motifs` | Any of `gradient_text` (key words in the gradient), `gradient_underline`, `eyebrow_pill` (small tag above the headline), `dots` (row of brand-color dots) | `["gradient_text","eyebrow_pill","dots"]` |
+| `motifs` | Any of `gradient_text` (key words in the gradient), `gradient_underline`, `eyebrow_pill` / `eyebrow_caps` (shortcuts for `style.eyebrow`), `gradient_divider`, `dots` (row of brand-color dots) | `["gradient_text","eyebrow_pill","dots"]` |
 | `eyebrow` | Short tag text, 2–4 words | `"Product design · UX · Systems"` |
 | `logo` / `logo_on_dark` | Logo PNGs with transparency. Without one, `name` is set as a wordmark | `"logo.png"` |
+| `colors.on_dark` | Text color on photos and dark backgrounds (e.g. cream instead of pure white) | `"#F6F0E2"` |
+| `colors.surface` / `surface_text` | Card color and its text, for the `card` layout | `"#F6F0E2"` / `"#1C1712"` |
+| `colors.link` | Color of link-style CTAs | `"#8B2E2E"` |
+| `colors.value` | Color of fact values (numbers, grams, minutes) | `"#3E6B3A"` |
+| `fonts.accent` | Italic or display font for taglines (used when `style.subhead_italic` is true) | `{"path": "fonts/Vollkorn-Italic_wght.ttf", "variation": "Italic"}` |
+| `fonts.wordmark` | Font for the brand name when there is no logo (defaults to `label`) | `{"path": "fonts/Vollkorn_wght.ttf", "variation": "SemiBold"}` |
+| `tiles` | Colors for `stats` tiles: list of `{bg, fg}` | `[{"bg":"#EFF6FF","fg":"#0369A1"}]` |
+| `style` | The **layout DNA**: `align`, `photo_shape`, `radius`, `frame`, `divider`, `eyebrow`, `shadow`, `dark_background`, `subhead_italic`. See `layouts.md` for how to read these from a site | `{"align": "center", "frame": "double"}` |
 
 Paths are relative to the `brand.json` file.
 
@@ -84,9 +94,42 @@ Paths are relative to the `brand.json` file.
   "grid": {"color": "#0EA5E9", "opacity": 0.08, "size": 64},
   "headline_tracking": -0.025,
   "button": {"style": "solid", "radius": "pill"},
+  "tiles": [{"bg": "#EFF6FF", "fg": "#0369A1"}, {"bg": "#ECFDF5", "fg": "#047857"},
+            {"bg": "#F5F3FF", "fg": "#6D28D9"}, {"bg": "#FFFBEB", "fg": "#B45309"}],
   "motifs": ["gradient_text", "eyebrow_pill", "dots"],
-  "eyebrow": "Product design · UX · Systems"
+  "eyebrow": "Product design · UX · Systems",
+  "style": {"align": "left", "photo_shape": "rounded", "radius": 28}
 }
 ```
 
 The site uses the system font (SF Pro on Apple devices), so the bundled Inter is the closest match.
+
+## Example: glpkitchen.com (a very different brand)
+
+Dark espresso and cream paper, serif headlines with italic taglines, uppercase tracked labels, a centered menu card with a double rule, an ornament divider, and red text-link CTAs.
+
+```json
+{
+  "name": "GLPKitchen",
+  "domain": "glpkitchen.com",
+  "colors": {"background": "#F6F0E2", "background_2": "#EFE6D2", "text": "#1C1712", "muted": "#6B5D4F",
+             "primary": "#1C1712", "on_primary": "#F6F0E2", "accent": "#8B2E2E", "border": "#CDBFA6",
+             "scrim": "#1C1712", "on_dark": "#F6F0E2", "surface": "#F6F0E2", "surface_text": "#1C1712",
+             "link": "#8B2E2E", "value": "#3E6B3A", "band": "#1C1712"},
+  "fonts": {
+    "heading":  {"path": "fonts/Vollkorn_wght.ttf", "variation": "SemiBold"},
+    "accent":   {"path": "fonts/Vollkorn-Italic_wght.ttf", "variation": "Italic"},
+    "wordmark": {"path": "fonts/Vollkorn_wght.ttf", "variation": "SemiBold"},
+    "body":     {"path": "fonts/Jost_wght.ttf", "variation": "Regular"},
+    "label":    {"path": "fonts/Jost_wght.ttf", "variation": "Medium"}
+  },
+  "headline_tracking": 0, "headline_leading": 1.12,
+  "button": {"style": "link"},
+  "eyebrow": "Real food for GLP-1",
+  "style": {"align": "center", "photo_shape": "rounded", "radius": 6, "frame": "double", "divider": "ornament",
+            "eyebrow": "caps", "shadow": true, "subhead_italic": true, "dark_background": "#1C1712"}
+}
+```
+
+Fonts were fetched with `python3 scripts/fetch_font.py Vollkorn fonts` and `... Jost fonts`.
+

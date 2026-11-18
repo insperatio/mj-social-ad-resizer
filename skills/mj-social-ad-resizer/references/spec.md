@@ -13,11 +13,26 @@
     "wide": {"path": "photo-wide.jpg", "focus": {"x": 0.45, "y": 0.4}},
     "tall": {"path": "photo-tall.jpg", "focus": {"x": 0.5, "y": 0.35}}
   },
-  "concepts": ["editorial", "full_bleed", "split"],
+  "concepts": ["editorial", "stats", "split", "full_bleed"],
   "concept_placement": "meta_portrait",
   "variants": [
-    {"id": "A", "headline": "Let's work together", "emphasis": "together", "cta": "Book a call"}
+    {"id": "A", "headline": "Let's work together", "emphasis": "together", "cta": "Book a call",
+     "facts": [{"value": "$9.3M", "label": "Realized revenue impact"}, {"value": "+134%", "label": "Referral share rate lift"}]}
   ]
+}
+```
+
+### Without a photo
+
+```json
+{
+  "name": "GLPKitchen", "output_dir": "/Users/me/Downloads/glp-ads", "mode": "ad", "stage": "concepts",
+  "brand": "glp_brand.json", "images": {},
+  "concepts": ["card", "centered", "type_only", "stats"],
+  "variants": [{"id": "A", "headline": "What to eat when you don't feel like eating.",
+    "subhead": "And what to cook when you do again.",
+    "facts": [{"label": "protein per 100 cal", "value": "11.6 g"}, {"label": "minutes, start to plate", "value": "15"}],
+    "cta": "See the menu"}]
 }
 ```
 
@@ -46,14 +61,15 @@ Same file, with:
 |---|---|---|
 | `name` | yes | Used in file names (`Mariana_Johnels_IG-4x5_A.png`). |
 | `output_dir` | yes | The connected export folder. Concepts go in a `concepts/` subfolder. |
-| `images` | yes | One or more photos. The script picks the photo whose shape best fits each frame. A value can be a path or `{path, focus}`. |
+| `images` | plain mode, photo layouts | One or more photos. The script picks the photo whose shape best fits each frame. A value can be a path or `{path, focus}`. Leave it empty for photo-free ads (`card`, `centered`, `stats`, `type_only`). |
 | `mode` | no | `plain` (default) or `ad`. |
 | `stage` | no | `concepts` or `final` (default). |
 | `brand` | ad mode | Path to `brand.json` (see `brand.md`) or the same object inline. |
-| `concepts` | no | Layouts to show: `editorial`, `full_bleed`, `split`, `band`. Default: the first three. |
+| `concepts` | no | Layouts to show (see `layouts.md`): `editorial`, `full_bleed`, `split`, `band`, `card`, `centered`, `stats`, `type_only`. Default: `editorial`, `full_bleed`, `split` with a photo; `card`, `centered`, `type_only` without. |
 | `concept_placement` | no | Size used for concepts. Default `meta_portrait`. |
 | `layout` | final, ad mode | The approved layout. |
-| `variants` | ad mode | `{id, headline, emphasis?, subhead?, cta?, eyebrow?}`. `emphasis` must be the end of the headline; those words get the gradient. With one variant, file names have no variant suffix. |
+| `variants` | ad mode | `{id, headline, emphasis?, subhead?, cta?, eyebrow?, facts?}`. `emphasis` must be the end of the headline; those words get the gradient (or the brand's `value` color). `facts` is a list of `{value, label}` (e.g. `{"value": "11.6 g", "label": "protein per 100 cal"}`), shown as stat tiles or menu-style rows. With one variant, file names have no variant suffix. |
+| `facts_on_photo_layouts` | no | Show `facts` in `editorial`, `full_bleed`, `split` and `band` too. Default false. |
 | `placements` | no | Keys from `placements.md`. Default: all. |
 | `format` | no | `webp` (default), `png`, `jpg`. |
 | `quality` | no | WebP/JPG quality, default 85. |
