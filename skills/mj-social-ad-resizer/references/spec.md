@@ -61,7 +61,7 @@ Same file, with:
 |---|---|---|
 | `name` | yes | Used in file names (`Mariana_Johnels_IG-4x5_A.png`). |
 | `output_dir` | yes | The connected export folder. Concepts go in a `concepts/` subfolder. |
-| `images` | plain mode, photo layouts | One or more photos. The script picks the photo whose shape best fits each frame. A value can be a path or `{path, focus}`. Leave it empty for photo-free ads (`card`, `centered`, `stats`, `type_only`). |
+| `images` | plain mode, photo layouts | One or more photos. The script picks the photo whose shape best fits each frame. A value can be a path or `{path, focus, subject}`. `subject` is the main subject's bounds `{x0, y0, x1, y1}` (fractions); without it, a box around `focus` is assumed. Leave it empty for photo-free ads (`card`, `centered`, `stats`, `type_only`). |
 | `mode` | no | `plain` (default) or `ad`. |
 | `stage` | no | `concepts` or `final` (default). |
 | `brand` | ad mode | Path to `brand.json` (see `brand.md`) or the same object inline. |
@@ -73,6 +73,11 @@ Same file, with:
 | `use_logo` | no | `false` when the user doesn't want a logo. Default: use the logo if one exists. |
 | `show_wordmark` | no | `false` to also drop the brand name shown as text when there's no logo. |
 | `logo_position` | no | Plain mode: `top-right` (default), `top-left`, `bottom-right`, `bottom-left`. |
+| `photo_fallback` | no | What replaces the photo when its subject wouldn't be visible: `auto` (default: brand gradient, else pattern, else color), `gradient`, `pattern`, `color`, or `never` to always use the photo. |
+| `min_subject_visible` | no | Share of the subject that must stay in the crop (default 0.6). |
+| `min_subject_size` | no | Smallest subject height, as a share of the ad's short side (default 0.12). |
+| `show_url` | no | `false` to leave the website address off the ads. |
+| `url_text` | no | Address to show instead of the brand domain, e.g. `"snhu.edu/business"`. |
 | `contrast` | no | `fix` (default): every line of text is measured against the pixels behind it, and colors below WCAG 2.2 AA (4.5:1, or 3:1 for headline-size text) are adjusted within the same hue. `warn`: report only. `off`: no check (not recommended). |
 | `facts_on_photo_layouts` | no | Show `facts` in `editorial`, `full_bleed`, `split` and `band` too. Default false. |
 | `placements` | no | Keys from `placements.md`. Default: all. |
@@ -94,6 +99,21 @@ Both stages print a `contrast` section (also saved in `manifest.json`):
   "issues": [{"from": "#FDB913", "to": "#BE8802", "ratio_before": 1.7, "ratio_after": 3.07,
               "needed": 3.0, "example_text": "grow a business.", "where": ["concept A", "concept B"]}]}
 ```
+
+## Brand report
+
+Both stages write `<Name>_brand-report.png` and return `brand_report`:
+
+```json
+"brand_report": {
+  "colors": [{"hex": "#0A2551", "used_for": ["button", "color band", "headline"]}, ...],
+  "fonts": [{"family": "Inter", "style": "Bold", "file": "Inter-Bold.otf", "used_for": ["headline"]}, ...],
+  "logos": {"logo": ["light background"], "logo_on_dark": ["dark background"]},
+  "contrast_fixes": [{"from": "#FDB913", "to": "#BE8802", "ratio": "1.7:1 → 3.07:1"}]
+}
+```
+
+The final stage also saves it in `manifest.json`.
 
 ## Minimum text sizes
 

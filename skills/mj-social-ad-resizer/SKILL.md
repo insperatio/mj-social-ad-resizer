@@ -29,10 +29,14 @@ Ask in one message, leaving out anything already given:
 6. **Logo.** Always ask: "Do you want your logo on the ads?"
    - **No:** set `"use_logo": false`. The brand name may still appear as text; set `"show_wordmark": false` to remove it too.
    - **Yes:** ask "Should I grab it from your website, or would you like to upload it?" Uploading is best for exact colors: SVG, or a PNG with a transparent background at least 600 px wide. A reversed (white) version for dark backgrounds is welcome too.
-7. **A/B variants?** If yes, write 2–3 headline/CTA versions (the user's is A) and get approval before rendering.
-8. **Post text for each platform?**
-9. **Format:** PNG, JPG or WebP (WebP quality 85 by default).
-10. **Link (optional)** for tracking links.
+   - A logo, when used, is **at least one third of the ad's width**. Tell the user so they know what to expect.
+7. **Website address.** Ask: "Do you want your website address on the ads?"
+   - **No:** set `"show_url": false`.
+   - **Yes:** use the domain, or a specific page they give, e.g. `"url_text": "snhu.edu/business"`.
+8. **A/B variants?** If yes, write 2–3 headline/CTA versions (the user's is A) and get approval before rendering.
+9. **Post text for each platform?**
+10. **Format:** PNG, JPG or WebP (WebP quality 85 by default).
+11. **Link (optional)** for tracking links in the manifest.
 
 ## Step 2: Build the brand profile (ad mode)
 
@@ -82,13 +86,14 @@ Follow `references/brand.md` and `references/layouts.md` to write `brand.json`.
 - for a single-color logo, makes the opposite version automatically (e.g. white for dark backgrounds)
 - for a multi-color logo, it can't, so ask the user for a reversed version
 
+**The right logo for each background:** the renderer measures the pixels behind the logo every time and uses whichever version stands out more: `logo` on light, `logo_on_dark` on dark or busy photos. Give it both versions whenever you can.
+
 **Show the prepared logo to the user and confirm it's the right one.** If a reversed version was generated, ask whether their brand allows a white logo.
 
 Put the paths in `brand.json` (`logo`, `logo_on_dark`) or in the spec's `"logo": {"logo": ..., "logo_on_dark": ...}`.
 
 **How the renderer places it:**
 - The logo replaces the text wordmark in each layout.
-- The renderer picks the right version for each background.
 - If a logo would be hard to see, it sits on a small contrasting chip and a warning is shown.
 - In plain mode, it goes in a corner (`"logo_position": "top-right"` by default).
 
@@ -111,7 +116,18 @@ Ask the user to connect the folder for the files (e.g. Downloads). In the Claude
 
 ## Step 5: Look at the photos
 
-Open each photo and set `focus` (x and y from 0 to 1) on the main subject. Warn if the short side is under 1080 px.
+Open each photo and mark the main subject:
+- `focus`: its center, with x and y from 0 to 1.
+- `subject`: its bounds, `{"x0", "y0", "x1", "y1"}` as fractions from the top left. Include the whole person or product, e.g. head to hands for someone at a laptop.
+
+Warn if the short side is under 1080 px.
+
+**Photo rules:**
+- **Never distort a photo.** Photos and logos are only cropped or scaled evenly (the renderer enforces this). Don't stretch or squash an image in any other step either.
+- **If the subject wouldn't be visible, don't use the photo.** When a crop would cut off more than 40% of the subject, or show it too small to recognize (under 12% of the ad's short side), the renderer uses a brand gradient, pattern or plain color in that spot instead and says so.
+  - Choose the replacement with `"photo_fallback": "gradient" | "pattern" | "color"`.
+  - The default `auto` uses the gradient if the brand has one, then a pattern, then a color.
+  - Mention these swaps to the user. A different crop or a second photo (wide or tall) usually brings the photo back.
 
 ## Step 6: Concepts for approval (ad mode)
 
@@ -166,12 +182,23 @@ For each platform, write the following, add it to the spec under `post_content`,
 
 **Ad copy checks:** flag restricted claims (health results, income promises, before/after) and anything that breaks the brand's house rules or spelling (e.g. a brand name written as one word).
 
-## Step 9: Deliver
+## Step 9: Brand report
+
+Each run also writes `<Name>_brand-report.png`, a small card listing:
+- every color used, with what it was used for
+- the fonts, shown in themselves
+- which logo version went on which kind of background
+- contrast fixes
+
+The same data is under `brand_report` in the output and `manifest.json`. Show the report with the concept sheet and again with the final files. Summarize it in a few lines, e.g. "Navy #0A2551 for headlines and buttons, yellow #FDB913 on navy (#BE8802 on white for contrast), Inter Bold/SemiBold/Regular."
+
+## Step 10: Deliver
 
 Confirm the files are in the folder. Summarize: the number of images, the sizes, the layout used, and any warnings left. Don't post or schedule anything.
 
 ## Notes
 - The script draws all text itself, so it's spelled exactly as written.
+- Photos and logos keep their proportions. A logo is at least a third of the ad's width, and the version that matches the background is used.
 - Accessibility is not optional. Every exported image meets WCAG 2.2 AA text contrast and the minimum text sizes, unless the user explicitly chose `"contrast": "warn"`.
 - Make each brand look like itself. If two brands' concepts come out structurally the same, the layout DNA wasn't captured; go back to the site.
 - Bundled font: Inter (SIL Open Font License). Downloaded Google Fonts are OFL or Apache licensed.

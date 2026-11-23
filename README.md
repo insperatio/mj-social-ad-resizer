@@ -9,6 +9,9 @@ Free agent skill that turns your website and photos into on-brand social images 
 - Optional **A/B variants** and **post text for each platform** (captions, alt text, hashtags, UTM links).
 - Exports **PNG, JPG or WebP** to a folder you choose, with a contact sheet and a `manifest.json`.
 - **Accessible by default:** every line of text is checked against the pixels behind it (WCAG 2.2 AA), and failing brand colors are adjusted within the same hue. Text never goes below a size that's readable on a phone; extra copy is left out first, and you're told.
+- **Photos stay true:** photos and logos are never stretched. If a crop would cut off the subject or make it too small to recognize, a brand gradient, pattern or color is used there instead.
+- **Logo done right:** at least a third of the ad's width, with the light or dark version chosen to stand out on each background.
+- **Brand report:** a small card listing every color and font used, which logo version went where, and any contrast fixes.
 - Warns about low-resolution photos.
 
 No AI image generation, no API keys, and it never publishes or schedules anything.
@@ -61,6 +64,7 @@ Claude asks only for what you haven't already given it:
 | Ad copy | Headline, optional subhead, call to action, and who the ad is for. Add key numbers (e.g. "11.6 g protein per 100 cal", "+134% lift") to get stat tiles or menu-style fact rows |
 | Branding | Your website URL. Brand guidelines and font files are optional extras |
 | Logo? | Yes or no. If yes, Claude can **grab it from your website** or you can **upload it** (SVG, or a PNG with a transparent background, is best). It removes backgrounds, trims the logo, and makes a white version for dark backgrounds when your logo is one color |
+| Website address? | Yes or no. If yes, show your domain or a specific page (e.g. "snhu.edu/business") |
 | A/B variants? | Yes = Claude writes 2–3 headline versions for you to approve |
 | Post text for each platform? | Yes = captions, hashtags, alt text and pin titles |
 | Format | PNG, JPG or WebP |
@@ -120,6 +124,7 @@ Mariana_Johnels_X_A.png          X 1600×900
 Mariana_Johnels_PT_A.png         Pinterest 1000×1500
 Mariana_Johnels_FB_A.png         Link preview 1200×630
 Mariana_Johnels_contact-sheet.png
+Mariana_Johnels_brand-report.png  Colors, fonts, logo versions and contrast fixes used
 manifest.json                    Sizes, tracking links, captions, alt text
 concepts/                        The concept images you chose from
 ```

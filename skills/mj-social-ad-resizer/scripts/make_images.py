@@ -51,6 +51,20 @@ warnings = []
 _boost = {"k": 1.0}  # text scale-up for tall frames (stories, pins) so they don't feel empty
 _ctx = {"W": 1080, "tag": "", "contrast": "fix"}
 contrast_report = []
+_used = {"colors": {}, "fonts": {}}
+_font_meta = {}
+
+
+def use_color(c, role):
+    if c is None:
+        return
+    _used["colors"].setdefault("#%02X%02X%02X" % tuple(rgb(c)), set()).add(role)
+
+
+def use_font(f, role):
+    meta = _font_meta.get(id(f))
+    if meta:
+        _used["fonts"].setdefault(meta, set()).add(role)
 
 # Smallest legible text, as a fraction of the image WIDTH. Social images are shown
 # about 375 px wide on a phone, so 0.027 x 1080 = 29 px renders at roughly 10 px.
@@ -221,11 +235,15 @@ def font(spec, size):
     key = (spec["path"], spec.get("variation"), size)
     if key not in _font_cache:
         f = ImageFont.truetype(spec["path"], max(int(size), 8))
+        style = None
         if spec.get("variation"):
             try:
                 f.set_variation_by_name(spec["variation"])
+                style = spec["variation"]
             except Exception:
                 warn(f"Font variation '{spec['variation']}' not found in {os.path.basename(spec['path'])}.")
+        fam, sty = f.getname()
+        _font_meta[id(f)] = (fam, style or sty, os.path.basename(spec["path"]))
         _font_cache[key] = f
     return _font_cache[key]
 
@@ -238,7 +256,7 @@ def palette(brand, kind):
         dark_fill = rgb(c["scrim"]) if lum(c["scrim"]) < 0.2 else (10, 10, 10)
         return {"dark": True, "text": od, "muted": mix(od, dark_fill, 0.18), "btn_bg": od,
                 "btn_fg": dark_fill, "line": mix(od, dark_fill, 0.35), "pill_text": od,
-                "link": lighten(c["link"], 0.45), "value": lighten(c["value"], 0.35), "bg": dark_fill}
+                "link": rgb(c.get("link_on_dark") or c["link"]), "value": rgb(c.get("value_on_dark") or c["value"]), "bg": dark_fill}
     if kind == "surface":
         light = lum(c["surface"]) > 0.35
         return {"dark": False, "text": rgb(c["surface_text"]), "muted": rgb(c["muted"]), "btn_bg": rgb(c["primary"]),
@@ -257,6 +275,14 @@ def bg_palette(brand):
 
 
 # ================================================================ photos
+def resize_uniform(img, scale):
+    """Resize by one factor on both axes. Photos and logos are never stretched or squashed."""
+    w, h = max(round(img.width * scale), 1), max(round(img.height * scale), 1)
+    out = img.resize((w, h), Image.LANCZOS)
+    assert abs(out.width / out.height - img.width / img.height) < 0.02 + 2 / min(out.width, out.height), "aspect ratio changed"
+    return out
+
+
 def load_photo(path):
     return ImageOps.exif_transpose(Image.open(path)).convert("RGB")
 
@@ -283,6 +309,44 @@ def shape_mask(w, h, shape, radius):
     return m
 
 
+def subject_box(src):
+    """Subject bounds as fractions (x0, y0, x1, y1). From 'subject', else a box around 'focus'."""
+    sb = src.get("subject")
+    if sb:
+        return (sb.get("x0", 0), sb.get("y0", 0), sb.get("x1", 1), sb.get("y1", 1))
+    fx, fy = src.get("focus", {}).get("x", 0.5), src.get("focus", {}).get("y", 0.5)
+    return (max(fx - 0.12, 0), max(fy - 0.15, 0), min(fx + 0.12, 1), min(fy + 0.15, 1))
+
+
+def fallback_fill(w, h, spec, brand):
+    """Brand color, pattern or gradient used when the photo's subject wouldn't be visible."""
+    choice = spec.get("photo_fallback", "auto")
+    if choice == "auto":
+        choice = "gradient" if brand["gradient"] else ("pattern" if brand.get("grid") else "color")
+    base_col = brand["colors"]["band"]
+    if choice == "gradient" and brand["gradient"]:
+        tile = gradient_image(w, h, brand["gradient"])
+        shade = gradient_image(w, h, [(0, 0, 0), (0, 0, 0)])
+        tile = Image.composite(shade, tile, gradient_image(w, h, [(0, 0, 0), (60, 60, 60)], horizontal=False).convert("L"))
+        for g in brand["gradient"]:
+            use_color(g, "photo replacement (gradient)")
+    elif choice == "pattern":
+        tile = Image.new("RGB", (w, h), rgb(base_col))
+        d = ImageDraw.Draw(tile)
+        step = max(int(min(w, h) / 14), 12)
+        dot = lighten(base_col, 0.18) if lum(base_col) < 0.4 else mix(base_col, (0, 0, 0), 0.12)
+        r = max(step // 10, 2)
+        for yy in range(step // 2, h, step):
+            for xx in range(step // 2, w, step):
+                d.ellipse((xx - r, yy - r, xx + r, yy + r), fill=dot)
+        use_color(base_col, "photo replacement (pattern)")
+        use_color(dot, "photo replacement (pattern)")
+    else:
+        tile = Image.new("RGB", (w, h), rgb(base_col))
+        use_color(base_col, "photo replacement (color)")
+    return tile, choice
+
+
 def place_photo(canvas, box, sources, spec, tag, shape="rect", radius=0):
     x0, y0, x1, y1 = [int(v) for v in box]
     w, h = x1 - x0, y1 - y0
@@ -296,31 +360,50 @@ def place_photo(canvas, box, sources, spec, tag, shape="rect", radius=0):
     kept = min(src_r, tgt_r) / max(src_r, tgt_r)
     mode = spec.get("fill", "auto")
     max_loss = spec.get("max_crop_loss", 0.75 if spec.get("mode") == "ad" else 0.6)
+    sx0, sy0, sx1, sy1 = subject_box(src)
     if mode == "crop" or (mode == "auto" and 1 - kept <= max_loss):
         scale = max(w / img.width, h / img.height)
-        nw, nh = round(img.width * scale), round(img.height * scale)
-        r = img.resize((nw, nh), Image.LANCZOS)
+        r = resize_uniform(img, scale)
+        nw, nh = r.size
         left = min(max(round(fx * nw - w / 2), 0), nw - w)
         top = min(max(round(fy * nh - h / 2), 0), nh - h)
         tile, how = r.crop((left, top, left + w, top + h)), "crop"
+        # how much of the subject is inside the crop
+        ix0, iy0 = max(sx0 * nw, left), max(sy0 * nh, top)
+        ix1, iy1 = min(sx1 * nw, left + w), min(sy1 * nh, top + h)
+        inter = max(ix1 - ix0, 0) * max(iy1 - iy0, 0)
+        visible = inter / max((sx1 - sx0) * nw * (sy1 - sy0) * nh, 1)
+        subj_px = (sy1 - sy0) * nh
     else:
         scale = min(w / img.width, h / img.height)
         how = "blur" if mode in ("auto", "blur") else "color"
         if how == "blur":
             s2 = max(w / img.width, h / img.height)
-            bg = img.resize((round(img.width * s2), round(img.height * s2)), Image.LANCZOS)
+            bg = resize_uniform(img, s2)
             bx, by = (bg.width - w) // 2, (bg.height - h) // 2
             tile = Image.blend(bg.crop((bx, by, bx + w, by + h)).filter(ImageFilter.GaussianBlur(max(w, h) // 30)),
                                Image.new("RGB", (w, h), 0), 0.2)
         else:
             tile = Image.new("RGB", (w, h), rgb(spec["_brand"]["colors"]["primary"]))
-        fg = img.resize((round(img.width * scale), round(img.height * scale)), Image.LANCZOS)
+        fg = resize_uniform(img, scale)
         tile.paste(fg, ((w - fg.width) // 2, (h - fg.height) // 2))
+        visible, subj_px = 1.0, (sy1 - sy0) * img.height * scale
+    # Rule: if the subject wouldn't be visible (cut off or too small to recognize), don't use the photo
+    min_subject = min(_ctx["W"], _ctx.get("H", _ctx["W"])) * spec.get("min_subject_size", 0.12)
+    if spec.get("photo_fallback", "auto") != "never" and (visible < spec.get("min_subject_visible", 0.6) or subj_px < min_subject):
+        tile, choice = fallback_fill(w, h, spec, spec["_brand"])
+        why = (f"only {visible:.0%} of the subject would be in frame" if visible < spec.get("min_subject_visible", 0.6)
+               else "the subject would be too small to recognize")
+        where = tag.rsplit("_", 1)[0] if len(tag.rsplit("_", 1)[-1]) == 1 else tag
+        warn(f"{where}: {why}, so a brand {choice} is used instead of the photo.")
+        canvas.paste(tile, (x0, y0), shape_mask(w, h, shape, radius))
+        return {"source": None, "fit": f"no photo ({choice})", "subject_visible_pct": round(visible * 100)}
     if scale > 1.05:
         where = tag.rsplit("_", 1)[0] if len(tag.rsplit("_", 1)[-1]) == 1 else tag
         warn(f"{where}: photo '{key}' was enlarged {scale:.1f}x and may look soft. A larger photo will be sharper.")
     canvas.paste(tile, (x0, y0), shape_mask(w, h, shape, radius))
-    return {"source": key, "fit": how, "photo_kept_pct": round(kept * 100), "scale": round(scale, 2)}
+    return {"source": key, "fit": how, "photo_kept_pct": round(kept * 100), "subject_visible_pct": round(visible * 100),
+            "scale": round(scale, 2)}
 
 
 # ================================================================ backgrounds, motifs
@@ -331,14 +414,19 @@ def paint_brand_bg(canvas, box, brand, dark=False):
     if dark:
         base_col = brand["style"]["dark_background"]
         bg = gradient_image(w, h, [lighten(base_col, 0.06), base_col], horizontal=False)
+        use_color(base_col, "background")
     else:
         bg = gradient_image(w, h, [c["background"], c["background_2"]], horizontal=False)
+        use_color(c["background"], "background")
+        if c["background_2"] != c["background"]:
+            use_color(c["background_2"], "background (fade)")
     base = min(w, h)
     for g in (brand.get("glows") or []):
         rad = max(int(base * g.get("r", 0.45)), 4)
         mask = ImageOps.invert(Image.radial_gradient("L").resize((rad * 2, rad * 2), Image.BILINEAR))
         mask = mask.point(lambda v, s=g.get("strength", 0.9) * (0.35 if dark else 1): int(v * s))
         bg.paste(Image.new("RGB", (rad * 2, rad * 2), rgb(g["color"])), (int(g.get("x", 0.2) * w) - rad, int(g.get("y", 0.1) * h) - rad), mask)
+        use_color(g["color"], "background glow")
     grid = brand.get("grid")
     if grid:
         step = max(int(grid.get("size", 64) * base / 1080), 12)
@@ -350,6 +438,7 @@ def paint_brand_bg(canvas, box, brand, dark=False):
         for gy in range(0, h, step):
             d.line((0, gy, w, gy), fill=a)
         bg.paste(Image.new("RGB", (w, h), rgb(grid.get("color", "#000000"))), (0, 0), m)
+        use_color(grid.get("color", "#000000"), f"grid lines ({int(grid.get('opacity', 0.06) * 100)}% opacity)")
     canvas.paste(bg, (x0, y0))
 
 
@@ -369,6 +458,7 @@ def scrim(canvas, box, color, direction, strength=0.78):
     region = canvas.crop((x0, y0, x1, y1))
     region.paste(Image.new("RGB", (w, h), rgb(color)), (0, 0), m)
     canvas.paste(region, (x0, y0))
+    use_color(color, "photo overlay")
 
 
 def darken_all(canvas, box, color, amount):
@@ -385,6 +475,7 @@ def draw_dots(canvas, x_right, y, brand, base):
     x = x_right - 3 * gap - r
     for c in cols[:4]:
         d.ellipse((x - r, y - r, x + r, y + r), fill=rgb(c))
+        use_color(c, "dots")
         x += gap
 
 
@@ -395,6 +486,7 @@ def draw_frame(canvas, box, color, style, base):
     x0, y0, x1, y1 = [int(v) for v in box]
     lw = max(int(base * 0.0025), 2)
     d.rectangle((x0, y0, x1, y1), outline=rgb(color), width=lw)
+    use_color(color, "frame")
     if style == "double":
         g = max(int(base * 0.008), 5)
         d.rectangle((x0 + g, y0 + g, x1 - g, y1 - g), outline=rgb(color), width=max(lw // 2, 1))
@@ -483,7 +575,7 @@ def fix_contrast(color, bg_lums, need):
     return best, before, min(_ratio(lum(best), lo), _ratio(lum(best), hi))
 
 
-def draw_text(canvas, xy, s, f, fill, tracking=0, gradient=None):
+def draw_text(canvas, xy, s, f, fill, tracking=0, gradient=None, role="text"):
     x, y = xy
     probe = ImageDraw.Draw(canvas)
     w = int(text_w(probe, s, f, tracking)) + 6
@@ -528,40 +620,71 @@ def draw_text(canvas, xy, s, f, fill, tracking=0, gradient=None):
                 gradient = fixed
             else:
                 fill = fixed[0]
+    if s.strip():
+        for col in (gradient or [fill]):
+            use_color(col, role + (" (gradient)" if gradient else ""))
+        use_font(f, role)
     fill_img = gradient_image(w, h, gradient) if gradient else Image.new("RGB", (w, h), fill)
     canvas.paste(fill_img, (int(x), int(y)), mask)
 
 
-def logo_image(brand, dark, height, max_w):
-    """Pick the logo version for the background and size it (height in px, capped at max_w wide)."""
-    path = brand.get("logo_on_dark") if dark and brand.get("logo_on_dark") else brand.get("logo")
-    if not path:
+LOGO_MIN_WIDTH = 1 / 3   # a logo, when used, is at least a third of the ad's width
+
+
+def logo_image(brand, width=None, max_w=None, max_h=None):
+    """Both logo versions sized to the same box. Width defaults to a third of the ad's width
+    (brand 'logo_min_width' can change it), capped at max_w / max_h. Proportions are kept."""
+    paths = [p_ for p_ in (brand.get("logo"), brand.get("logo_on_dark")) if p_]
+    if not paths:
         return None
-    lg = Image.open(path).convert("RGBA")
-    h = max(int(height), 8)
-    w = max(int(lg.width * h / lg.height), 1)
-    if w > max_w:
-        w, h = int(max_w), max(int(lg.height * max_w / lg.width), 8)
-    return lg.resize((w, h), Image.LANCZOS)
+    imgs = [Image.open(p_).convert("RGBA") for p_ in paths]
+    ref = imgs[0]
+    target = width or _ctx["W"] * brand.get("logo_min_width", LOGO_MIN_WIDTH)
+    w = int(target)
+    if max_w:
+        w = min(w, int(max_w))
+    h = max(int(ref.height * w / ref.width), 8)
+    if max_h and h > max_h:
+        h = int(max_h)
+        w = max(int(ref.width * h / ref.height), 1)
+    if w < _ctx["W"] * brand.get("logo_min_width", LOGO_MIN_WIDTH) * 0.95:
+        warn(f"{_ctx['tag']}: the logo is {w / _ctx['W']:.0%} of the ad's width; there wasn't room for a third here.")
+    versions = []
+    for im in imgs:
+        vh = max(int(im.height * w / im.width), 1)
+        versions.append(resize_uniform(im, w / im.width) if abs(vh - h) <= 2 else resize_uniform(im, h / im.height))
+    return {"versions": versions, "names": [n for n, p_ in (("logo", brand.get("logo")), ("logo_on_dark", brand.get("logo_on_dark"))) if p_],
+            "w": versions[0].width, "h": versions[0].height}
 
 
-def paste_logo(canvas, lg, x, y):
-    """Paste a logo; if it would be hard to see on what's behind it, put it on a small contrasting chip."""
+def paste_logo(canvas, pair, x, y):
+    """Measure what's behind the logo and use the version that stands out most.
+    Only if neither version is visible enough, put it on a small contrasting chip."""
     import numpy as np
     x, y = int(x), int(y)
-    a = np.array(lg)
-    solid = a[a[..., 3] > 200][:, :3]
-    if len(solid):
+    behind = _lum_array(np.array(canvas.crop((x, y, x + pair["w"], y + pair["h"])).convert("RGB")))
+    bg_l = float(np.median(behind))
+    best = None
+    for name, lg in zip(pair["names"], pair["versions"]):
+        a = np.array(lg)
+        solid = a[a[..., 3] > 200][:, :3]
+        if not len(solid):
+            continue
         logo_l = float(np.median(_lum_array(solid.reshape(-1, 1, 3))))
-        behind = _lum_array(np.array(canvas.crop((x, y, x + lg.width, y + lg.height)).convert("RGB")))
-        bg_l = float(np.median(behind))
-        if _ratio(logo_l, bg_l) < 2.0:
-            pad = max(int(lg.height * 0.35), 6)
-            chip = (255, 255, 255) if logo_l < 0.4 else (17, 17, 17)
-            ImageDraw.Draw(canvas).rounded_rectangle((x - pad, y - pad, x + lg.width + pad, y + lg.height + pad),
-                                                     radius=pad, fill=chip)
-            warn(f"{_ctx['tag']}: the logo was hard to see on this background, so it sits on a "
-                 f"{'white' if chip[0] > 128 else 'dark'} chip. A reversed logo would look cleaner.")
+        r = _ratio(logo_l, bg_l)
+        if best is None or r > best[0]:
+            best = (r, name, lg, logo_l)
+    if best is None:
+        return
+    r, name, lg, logo_l = best
+    if r < 2.0:
+        pad = max(int(lg.height * 0.3), 6)
+        chip = (255, 255, 255) if logo_l < 0.4 else (17, 17, 17)
+        ImageDraw.Draw(canvas).rounded_rectangle((x - pad, y - pad, x + lg.width + pad, y + lg.height + pad), radius=pad, fill=chip)
+        use_color(chip, "logo chip")
+        warn(f"{_ctx['tag']}: neither logo version stands out on this background, so it sits on a "
+             f"{'white' if chip[0] > 128 else 'dark'} chip. A {'reversed (white)' if logo_l < 0.4 else 'dark'} logo would look cleaner.")
+    _used.setdefault("logos", {}).setdefault(name, set()).add("dark background" if bg_l < 0.12 else ("mid-tone background" if bg_l < 0.4 else "light background"))
     canvas.paste(lg, (x, y), lg)
 
 
@@ -586,13 +709,13 @@ def build_block(draw, brand, variant, width, scale, pal, parts, base, hscale=1.0
     gap = lambda k: int(base * k * scale)
 
     if "wordmark" in parts and (brand.get("name") or brand.get("logo")):
-        lg = logo_image(brand, pal["dark"], max(gap(brand.get("logo_scale", 0.07)), mp("label") * 1.8), width * 0.55)
+        lg = logo_image(brand, max_w=width, max_h=_ctx.get("H", 1080) * 0.22)
         if lg:
             ops.append(("img", y, lg))
-            y += lg.height + gap(0.03)
+            y += lg["h"] + gap(0.035)
         else:
             f = font(F["wordmark"], max(gap(0.032), mp("label")))
-            ops.append(("text", y, brand["name"], f, pal["text"], 0, None))
+            ops.append(("text", y, brand["name"], f, pal["text"], 0, None, "wordmark"))
             y += line_h(f) + gap(0.028)
 
     eyebrow = v.get("eyebrow", brand.get("eyebrow"))
@@ -604,7 +727,7 @@ def build_block(draw, brand, variant, width, scale, pal, parts, base, hscale=1.0
             ops.append(("pill", y, s, f, text_w(draw, s, f, 0.06), px, py))
             y += line_h(f) + 2 * py + gap(0.035)
         else:
-            ops.append(("text", y, s, f, pal["muted"], 0.16, None))
+            ops.append(("text", y, s, f, pal["muted"], 0.16, None, "eyebrow"))
             y += line_h(f) + gap(0.028)
 
     n_lines = 0
@@ -622,14 +745,13 @@ def build_block(draw, brand, variant, width, scale, pal, parts, base, hscale=1.0
         emph_l = wrap(draw, emph, hf, width, track) if emph else []
         lh = int(hsize * brand.get("headline_leading", 1.08))
         grad = brand["gradient"] if (brand["gradient"] and "gradient_text" in motifs) else None
-        if grad and pal["dark"]:
-            grad = [lighten(g, 0.35) for g in grad]
+
         emph_col = pal["text"] if grad or not emph else pal["value"]
         for ln in lead_l:
-            ops.append(("text", y, ln, hf, pal["text"], track, None))
+            ops.append(("text", y, ln, hf, pal["text"], track, None, "headline"))
             y += lh
         for ln in emph_l:
-            ops.append(("text", y, ln, hf, emph_col, track, grad))
+            ops.append(("text", y, ln, hf, emph_col, track, grad, "headline emphasis"))
             y += lh
         n_lines = len(lead_l) + len(emph_l)
         last = (emph_l or lead_l or [""])[-1]
@@ -651,7 +773,7 @@ def build_block(draw, brand, variant, width, scale, pal, parts, base, hscale=1.0
         y += gap(0.02)
         sf = font(F["accent"] if st.get("subhead_italic") else F["body"], max(gap(0.034), mp("body")))
         for ln in wrap(draw, sub, sf, width)[:3]:
-            ops.append(("text", y, ln, sf, pal["muted"], 0, None))
+            ops.append(("text", y, ln, sf, pal["muted"], 0, None, "subhead"))
             y += int(line_h(sf) * 1.12)
 
     facts = v.get("facts") or []
@@ -695,27 +817,31 @@ def draw_block(canvas, ops, x, y, width, brand, pal, align="left"):
         kind, oy = op[0], y + op[1]
         draw = ImageDraw.Draw(canvas)
         if kind == "text":
-            _, _, s, f, col, track, grad = op
-            draw_text(canvas, (ox_for(text_w(draw, s, f, track)), oy), s, f, col, track, grad)
+            _, _, s, f, col, track, grad, role = op
+            draw_text(canvas, (ox_for(text_w(draw, s, f, track)), oy), s, f, col, track, grad, role)
         elif kind == "img":
             lg = op[2]
-            paste_logo(canvas, lg, ox_for(lg.width), oy)
+            paste_logo(canvas, lg, ox_for(lg["w"]), oy)
         elif kind == "bar":
             _, _, uw, bh = op
             m = Image.new("L", (uw, bh), 0)
             ImageDraw.Draw(m).rounded_rectangle((0, 0, uw - 1, bh - 1), radius=bh // 2, fill=255)
             canvas.paste(gradient_image(uw, bh, brand["gradient"]), (int(ox_for(uw)), int(oy)), m)
+            for g in brand["gradient"]:
+                use_color(g, "underline")
         elif kind == "pill":
             _, _, s, f, tw, px, py = op
             w, h = int(tw + 2 * px), line_h(f) + 2 * py
             ox = ox_for(w)
             draw.rounded_rectangle((ox, oy, ox + w, oy + h), radius=h // 2, fill=None if pal["dark"] else (255, 255, 255),
                                    outline=pal["line"] if not pal["dark"] else pal["text"], width=max(2, f.size // 10))
-            draw_text(canvas, (ox + px, oy + py - 1), s, f, pal["pill_text"], 0.06)
+            use_color((255, 255, 255) if not pal["dark"] else None, "eyebrow pill")
+            draw_text(canvas, (ox + px, oy + py - 1), s, f, pal["pill_text"], 0.06, role="eyebrow")
         elif kind == "divider":
             _, _, style, dw = op
             ox = ox_for(dw)
             lw = max(int(dw * 0.006), 2)
+            use_color(pal["line"] if style != "gradient" else None, "divider")
             if style == "gradient" and brand["gradient"]:
                 canvas.paste(gradient_image(dw, lw * 2, brand["gradient"]), (int(ox), int(oy)))
             elif style == "ornament":
@@ -730,8 +856,8 @@ def draw_block(canvas, ops, x, y, width, brand, pal, align="left"):
             lw_, vw_ = text_w(draw, label, lf), text_w(draw, value, vf)
             row_w = width if align != "center" else row_w
             ox = ox_for(row_w)
-            draw_text(canvas, (ox, oy + (rh - line_h(lf)) / 2), label, lf, pal["text"])
-            draw_text(canvas, (ox + row_w - vw_, oy + (rh - line_h(vf)) / 2), value, vf, pal["value"])
+            draw_text(canvas, (ox, oy + (rh - line_h(lf)) / 2), label, lf, pal["text"], role="fact label")
+            draw_text(canvas, (ox + row_w - vw_, oy + (rh - line_h(vf)) / 2), value, vf, pal["value"], role="fact value")
             ly = oy + rh * 0.62
             dx, end = ox + lw_ + rh * 0.4, ox + row_w - vw_ - rh * 0.4
             r = max(int(rh * 0.04), 1)
@@ -742,7 +868,7 @@ def draw_block(canvas, ops, x, y, width, brand, pal, align="left"):
         elif kind == "link":
             _, _, s, f, tw = op
             ox = ox_for(tw)
-            draw_text(canvas, (ox, oy), s, f, pal["link"], 0.12)
+            draw_text(canvas, (ox, oy), s, f, pal["link"], 0.12, role="CTA link")
             ul = oy + f.getbbox(s)[3] + max(int(f.size * 0.25), 3)
             ImageDraw.Draw(canvas).line((ox, ul, ox + tw, ul), fill=pal["link"], width=max(f.size // 12, 2))
         elif kind == "button":
@@ -761,9 +887,11 @@ def draw_block(canvas, ops, x, y, width, brand, pal, align="left"):
                 face, fg = Image.new("RGB", (w, h), pal["btn_bg"]), pal["btn_fg"]
             if face is not None:
                 canvas.paste(face, (int(ox), int(oy)), m)
+                for col in (brand["gradient"] if style == "gradient" and brand["gradient"] else [pal["btn_bg"]]):
+                    use_color(col, "button")
             else:
                 ImageDraw.Draw(canvas).rounded_rectangle((ox, oy, ox + w, oy + h), radius=rad, outline=pal["text"], width=max(2, f.size // 10))
-            draw_text(canvas, (ox + px, oy + py - 1), s, f, fg)
+            draw_text(canvas, (ox + px, oy + py - 1), s, f, fg, role="button text")
 
 
 DROP_ORDER = ("subhead", "facts", "eyebrow", "wordmark", "divider")
@@ -801,7 +929,7 @@ def _has_part(variant, brand, part):
     v = variant or {}
     return {"subhead": bool(v.get("subhead")), "facts": bool(v.get("facts")),
             "eyebrow": bool(v.get("eyebrow", brand.get("eyebrow")) and brand["style"].get("eyebrow")),
-            "wordmark": bool(brand.get("name") or brand.get("logo")), "divider": bool(brand["style"].get("divider"))}.get(part, False)
+            "wordmark": bool(brand.get("name")) and not brand.get("logo"), "divider": bool(brand["style"].get("divider"))}.get(part, False)
 
 
 def footer(canvas, brand, x, y, pal, base, align="left", width=0):
@@ -811,7 +939,7 @@ def footer(canvas, brand, x, y, pal, base, align="left", width=0):
     s = brand["domain"]
     if align == "center":
         x = x + (width - text_w(ImageDraw.Draw(canvas), s, f)) / 2
-    draw_text(canvas, (x, y), s, f, pal["muted"] if not pal["dark"] else pal["text"])
+    draw_text(canvas, (x, y), s, f, pal["muted"] if not pal["dark"] else pal["text"], role="domain")
 
 
 def safe(p, H):
@@ -901,11 +1029,15 @@ def layout_split(canvas, p, sources, spec, brand, v, tag):
         draw_block(canvas, ops, pad, top + (H - ph - top - pad - bh) // 2, W - 2 * pad, brand, pal, align)
         info = place_photo(canvas, (0, H - ph, W, H), sources, spec, tag)
         canvas.paste(gradient_image(W, divider, rule), (0, H - ph - divider))
+        for c_ in rule:
+            use_color(c_, "divider")
         return info
     panel = int(W * (0.44 if W / H >= 1.2 else 0.5))
     paint_brand_bg(canvas, (0, 0, panel, H), brand)
     info = place_photo(canvas, (panel + divider, 0, W, H), sources, spec, tag)
     canvas.paste(gradient_image(divider, H, rule, horizontal=False), (panel, 0))
+    for c_ in rule:
+        use_color(c_, "divider")
     ops, bh = fit_block(d, brand, v, panel - 2 * pad, H - 2 * pad - int(base * 0.06), pal, ALL_PARTS, base, tag)
     draw_block(canvas, ops, pad, max(pad, (H - bh) // 2 - int(base * 0.02)), panel - 2 * pad, brand, pal, align)
     footer(canvas, brand, pad, H - pad - int(base * 0.022), pal, base, align, panel - 2 * pad)
@@ -925,6 +1057,7 @@ def layout_band(canvas, p, sources, spec, brand, v, tag):
         bw = int(W * 0.42)
         info = place_photo(canvas, (0, 0, W - bw, H), sources, spec, tag)
         canvas.paste(Image.new("RGB", (bw, H), band_col), (W - bw, 0))
+        use_color(band_col, "color band")
         ops, bh = fit_block(d, brand, v, bw - 2 * pad, H - 2 * pad, pal, parts, base, tag)
         draw_block(canvas, ops, W - bw + pad, (H - bh) // 2, bw - 2 * pad, brand, pal, align)
         return info
@@ -932,6 +1065,7 @@ def layout_band(canvas, p, sources, spec, brand, v, tag):
     band_h = bh + 2 * pad + sb
     info = place_photo(canvas, (0, 0, W, H - band_h), sources, spec, tag)
     canvas.paste(Image.new("RGB", (W, band_h), band_col), (0, H - band_h))
+    use_color(band_col, "color band")
     if brand["gradient"]:
         canvas.paste(gradient_image(W, max(int(base * 0.008), 4), brand["gradient"]), (0, H - band_h))
     draw_block(canvas, ops, pad, H - band_h + pad, W - 2 * pad, brand, pal, align)
@@ -960,19 +1094,19 @@ def layout_card(canvas, p, sources, spec, brand, v, tag):
     d = ImageDraw.Draw(canvas)
     top_y = max(int(base * 0.06), st_ + int(base * 0.03))
     bottom_m = max(int(base * 0.09), sb + int(base * 0.05))
-    lg = logo_image(brand, True, base * 0.06, W * 0.4)
+    lg = logo_image(brand, max_w=W * (0.4 if wide else 0.6), max_h=H * 0.16)
     if lg:
         if wide:
             paste_logo(canvas, lg, int(base * 0.08), int(base * 0.08))
         else:
-            paste_logo(canvas, lg, (W - lg.width) / 2, top_y)
-            top_y += lg.height + int(base * 0.035)
+            paste_logo(canvas, lg, (W - lg["w"]) / 2, top_y)
+            top_y += lg["h"] + int(base * 0.035)
     elif brand.get("name"):
         f = font(brand["fonts"]["wordmark"], int(base * (0.045 if wide else 0.04)))
         if wide:
-            draw_text(canvas, (int(base * 0.08), int(base * 0.08)), brand["name"], f, dark["text"])
+            draw_text(canvas, (int(base * 0.08), int(base * 0.08)), brand["name"], f, dark["text"], role="wordmark")
         else:
-            draw_text(canvas, ((W - text_w(d, brand["name"], f)) / 2, top_y), brand["name"], f, dark["text"])
+            draw_text(canvas, ((W - text_w(d, brand["name"], f)) / 2, top_y), brand["name"], f, dark["text"], role="wordmark")
             top_y += line_h(f) + int(base * 0.035)
     cw = int(W * (0.5 if wide else 0.82))
     inner = int(cw * 0.09)
@@ -991,6 +1125,7 @@ def layout_card(canvas, p, sources, spec, brand, v, tag):
     m = Image.new("L", (cw, ch), 0)
     ImageDraw.Draw(m).rounded_rectangle((0, 0, cw - 1, ch - 1), radius=rad, fill=255)
     canvas.paste(Image.new("RGB", (cw, ch), rgb(c["surface"])), (cx, cy), m)
+    use_color(c["surface"], "card")
     fi = int(base * 0.016)
     draw_frame(canvas, (cx + fi, cy + fi, cx + cw - fi, cy + ch - fi), mix(c["surface_text"], c["surface"], 0.55), sty.get("frame"), base)
     draw_block(canvas, ops, cx + inner, cy + inner, cw - 2 * inner, brand, surf, align)
@@ -1088,6 +1223,7 @@ def layout_stats(canvas, p, sources, spec, brand, v, tag):
         x0 = ax0 + (cols - in_row) * (tw_ + gx) // 2 + c_ * (tw_ + gx)
         y0 = oy + r_ * (th_ + gx)
         t = tiles[i % len(tiles)]
+        use_color(t["bg"], "stat tile")
         ImageDraw.Draw(canvas).rounded_rectangle((x0, y0, x0 + tw_, y0 + th_), radius=rad, fill=rgb(t["bg"]),
                                                  outline=mix(t["bg"], t["fg"], 0.15), width=2)
         vf = font(brand["fonts"]["heading"], int(min(th_ * 0.38, tw_ * 0.3)))
@@ -1098,10 +1234,10 @@ def layout_stats(canvas, p, sources, spec, brand, v, tag):
         lab = wrap(d, str(fact.get("label", "")), lf, tw_ * 0.84)[:2]
         block_h = line_h(vf) + len(lab) * int(line_h(lf) * 1.1) + int(th_ * 0.04)
         yy = y0 + (th_ - block_h) // 2
-        draw_text(canvas, (x0 + (tw_ - text_w(d, val, vf)) / 2, yy), val, vf, rgb(t["fg"]))
+        draw_text(canvas, (x0 + (tw_ - text_w(d, val, vf)) / 2, yy), val, vf, rgb(t["fg"]), role="stat value")
         yy += line_h(vf) + int(th_ * 0.04)
         for ln in lab:
-            draw_text(canvas, (x0 + (tw_ - text_w(d, ln, lf)) / 2, yy), ln, lf, mix(brand["colors"]["text"], t["bg"], 0.15))
+            draw_text(canvas, (x0 + (tw_ - text_w(d, ln, lf)) / 2, yy), ln, lf, mix(brand["colors"]["text"], t["bg"], 0.15), role="stat label")
             yy += int(line_h(lf) * 1.1)
     if "dots" in (brand.get("motifs") or []):
         draw_dots(canvas, W - pad, max(pad, st_ + pad // 2) + int(base * 0.02), brand, base)
@@ -1145,12 +1281,10 @@ def render(key, sources, spec, brand, variant, layout, tag):
         if brand.get("logo") and spec.get("logo_on_plain", True):
             import numpy as np
             m = int(min(W, H) * 0.045)
-            corner = canvas.crop((int(W * 0.6), max(m, int(H * p["safe_top"])), W, int(H * 0.3)))
-            dark_corner = float(np.median(_lum_array(np.array(corner)))) < 0.35
             pos = spec.get("logo_position", "top-right")
-            lg = logo_image(brand, dark_corner, min(W, H) * 0.07, W * 0.3)
-            x = W - lg.width - m if "right" in pos else m
-            y = max(m, int(H * p["safe_top"]) + m) if "top" in pos else H - lg.height - max(m, int(H * p["safe_bottom"]) + m)
+            lg = logo_image(brand, max_h=H * 0.2)
+            x = W - lg["w"] - m if "right" in pos else m
+            y = max(m, int(H * p["safe_top"]) + m) if "top" in pos else H - lg["h"] - max(m, int(H * p["safe_bottom"]) + m)
             paste_logo(canvas, lg, x, y)
         return canvas, info
     return canvas, LAYOUT_FN[layout](canvas, p, sources, spec, brand, variant, tag)
@@ -1208,6 +1342,77 @@ def save(img, path, pil_fmt, quality):
     img.save(path, pil_fmt, **kw)
 
 
+def brand_report():
+    """Colors and fonts that actually ended up in the images, with where each was used."""
+    colors = sorted(({"hex": k, "used_for": sorted(v)} for k, v in _used["colors"].items()),
+                    key=lambda e: (-len(e["used_for"]), e["hex"]))
+    fonts = [{"family": fam, "style": sty, "file": fn, "used_for": sorted(v)} for (fam, sty, fn), v in _used["fonts"].items()]
+    logos = {k: sorted(v) for k, v in _used.get("logos", {}).items()}
+    return {"colors": colors, "fonts": fonts, "logos": logos,
+            "contrast_fixes": [{"from": i["from"], "to": i["to"], "ratio": f"{i['ratio_before']}:1 → {i['ratio_after']}:1"}
+                               for i in contrast_summary()["issues"]]}
+
+
+def report_image(rep_, path, title):
+    """A small one-page card: color swatches, fonts (set in themselves), contrast fixes."""
+    W, pad = 1400, 48
+    hf = ImageFont.truetype(DEFAULT_FONTS["heading"], 34)
+    sf = ImageFont.truetype(DEFAULT_FONTS["label"], 22)
+    bf = ImageFont.truetype(DEFAULT_FONTS["body"], 19)
+    cols = rep_["colors"]
+    per_row, sw = 4, (W - 2 * pad - 3 * 24) // 4
+    rows = (len(cols) + per_row - 1) // per_row
+    H = 150 + rows * 150 + 70 + len(rep_["fonts"]) * 76 + (60 + 34 * len(rep_["contrast_fixes"]) if rep_["contrast_fixes"] else 0) + \
+        (50 + 30 * len(rep_["logos"]) if rep_["logos"] else 0) + pad
+    im = Image.new("RGB", (W, H), (255, 255, 255))
+    d = ImageDraw.Draw(im)
+    d.text((pad, 36), title, font=hf, fill=(17, 17, 17))
+    d.text((pad, 92), "COLORS", font=sf, fill=(90, 90, 100))
+    y = 130
+    for i, c in enumerate(cols):
+        r_, c_ = divmod(i, per_row)
+        x, yy = pad + c_ * (sw + 24), y + r_ * 150
+        d.rounded_rectangle((x, yy, x + 72, yy + 72), radius=12, fill=rgb(c["hex"]), outline=(210, 212, 218), width=2)
+        d.text((x + 88, yy + 4), c["hex"], font=sf, fill=(17, 17, 17))
+        roles = ", ".join(c["used_for"])
+        lines = wrap(d, roles, bf, sw - 92)[:3]
+        for k, ln in enumerate(lines):
+            d.text((x + 88, yy + 36 + k * 24), ln, font=bf, fill=(90, 90, 100))
+    y += rows * 150 + 20
+    d.text((pad, y), "FONTS", font=sf, fill=(90, 90, 100))
+    y += 44
+    for f_ in rep_["fonts"]:
+        try:
+            path_ = next((fp for (fp, var, _), fo in _font_cache.items() if _font_meta.get(id(fo), (None,))[0] == f_["family"]), None)
+            sample = ImageFont.truetype(path_, 30) if path_ else hf
+            var = next((var for (fp, var, _), fo in _font_cache.items() if _font_meta.get(id(fo)) == (f_["family"], f_["style"], f_["file"])), None)
+            if var:
+                sample.set_variation_by_name(var)
+        except Exception:
+            sample = hf
+        d.text((pad, y), f"{f_['family']} {f_['style']}", font=sample, fill=(17, 17, 17))
+        d.text((pad, y + 40), "Used for: " + ", ".join(f_["used_for"]), font=bf, fill=(90, 90, 100))
+        y += 76
+    if rep_["logos"]:
+        y += 10
+        d.text((pad, y), "LOGO", font=sf, fill=(90, 90, 100))
+        y += 40
+        for k, v in rep_["logos"].items():
+            d.text((pad, y), f"{'Standard logo' if k == 'logo' else 'Reversed logo'} on " + " and ".join(v), font=bf, fill=(50, 50, 60))
+            y += 30
+    if rep_["contrast_fixes"]:
+        y += 16
+        d.text((pad, y), "CONTRAST FIXES (WCAG 2.2 AA)", font=sf, fill=(90, 90, 100))
+        y += 42
+        for fx in rep_["contrast_fixes"]:
+            d.rounded_rectangle((pad, y, pad + 26, y + 26), radius=6, fill=rgb(fx["from"]))
+            d.text((pad + 36, y), "→", font=bf, fill=(90, 90, 100))
+            d.rounded_rectangle((pad + 64, y, pad + 90, y + 26), radius=6, fill=rgb(fx["to"] or fx["from"]))
+            d.text((pad + 104, y), f"{fx['from']} → {fx['to']}   ({fx['ratio']})", font=bf, fill=(50, 50, 60))
+            y += 34
+    im.save(path)
+
+
 def contrast_summary():
     """One line per original color that failed, with the color it was changed to."""
     seen = {}
@@ -1233,6 +1438,10 @@ def main(spec_path):
             if spec["logo"].get(k):
                 pth = spec["logo"][k] if os.path.isabs(spec["logo"][k]) else os.path.join(spec_dir, spec["logo"][k])
                 brand[k] = pth if os.path.exists(pth) else brand.get(k)
+    if spec.get("show_url") is False:
+        brand["domain"] = ""
+    elif spec.get("url_text"):
+        brand["domain"] = spec["url_text"]
     if spec.get("use_logo") is False:
         brand["logo"] = brand["logo_on_dark"] = None
     if spec.get("show_wordmark") is False and not brand.get("logo"):
@@ -1291,8 +1500,11 @@ def main(spec_path):
         sheet_path = os.path.join(out_dir, f"{name}_concepts.png")
         sheet(items, sheet_path, f"{name.replace('_', ' ')}: ad concepts",
               f"{p['label']} · {p['w']}×{p['h']} · pick one direction to apply to every size", thumb_h=560)
-        print(json.dumps({"stage": "concepts", "concept_sheet": sheet_path, "concepts": files,
-                          "contrast": contrast_summary(), "warnings": warnings}, indent=2))
+        rep_ = brand_report()
+        rpath = os.path.join(out_dir, f"{name}_brand-report.png")
+        report_image(rep_, rpath, f"{name.replace('_', ' ')}: colors and fonts used in the concepts")
+        print(json.dumps({"stage": "concepts", "concept_sheet": sheet_path, "brand_report_image": rpath, "brand_report": rep_,
+                          "concepts": files, "contrast": contrast_summary(), "warnings": warnings}, indent=2))
         return
 
     layout = spec.get("layout", "editorial" if sources else "card")
@@ -1330,6 +1542,7 @@ def main(spec_path):
         manifest["post_content"] = spec["post_content"]
     manifest["warnings"] = warnings
     manifest["contrast"] = contrast_summary()
+    manifest["brand_report"] = brand_report()
     mpath = os.path.join(out_dir, "manifest.json")
     if only and os.path.exists(mpath):
         with open(mpath) as f:
@@ -1349,7 +1562,11 @@ def main(spec_path):
               f"Layout: {LAYOUT_LABELS.get(layout, 'plain') if mode == 'ad' else 'plain'}")
     with open(mpath, "w") as f:
         json.dump(manifest, f, indent=2)
-    print(json.dumps({"stage": "final", "contrast": contrast_summary(), "output_dir": out_dir, "files": [e["file"] for e in manifest["images"]],
+    rpath = os.path.join(out_dir, f"{name}_brand-report.png")
+    if items and not only:
+        report_image(manifest["brand_report"], rpath, f"{name.replace('_', ' ')}: colors and fonts used")
+    print(json.dumps({"stage": "final", "brand_report_image": rpath if items and not only else None,
+                      "brand_report": manifest["brand_report"], "contrast": contrast_summary(), "output_dir": out_dir, "files": [e["file"] for e in manifest["images"]],
                       "contact_sheet": sheet_path if items else None, "warnings": warnings}, indent=2))
 
 
