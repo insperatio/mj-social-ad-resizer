@@ -8,7 +8,8 @@ Free agent skill that turns your website and photos into on-brand social images 
 - **Concepts first:** see 3–4 layout directions side by side, pick one, then every size is rendered in that style.
 - Optional **A/B variants** and **post text for each platform** (captions, alt text, hashtags, UTM links).
 - Exports **PNG, JPG or WebP** to a folder you choose, with a contact sheet and a `manifest.json`.
-- Checks text contrast (WCAG AA) and warns about low-resolution photos and text that doesn't fit.
+- **Accessible by default:** every line of text is checked against the pixels behind it (WCAG 2.2 AA), and failing brand colors are adjusted within the same hue. Text never goes below a size that's readable on a phone; extra copy is left out first, and you're told.
+- Warns about low-resolution photos.
 
 No AI image generation, no API keys, and it never publishes or schedules anything.
 
@@ -148,7 +149,7 @@ Platforms change their specs from time to time; tell Claude if you need a differ
 - **Short headlines work best.** Aim for under about 40 characters so the text stays large on small sizes.
 - **Check the spelling before rendering.** Text is printed exactly as written.
 - **Logos:** use a PNG with a transparent background.
-- **Contrast warnings** mean the text may be hard to read. Pick a darker band color or lighter text.
+- **Contrast fixes:** if a brand color fails on a background (e.g. yellow on white), Claude tells you what it changed. You can give your own accessible version instead, or pick a layout where that color sits on a dark background.
 
 ## Troubleshooting
 

@@ -49,6 +49,16 @@ FORMATS = {"webp": ("WEBP", "webp"), "png": ("PNG", "png"), "jpg": ("JPEG", "jpg
 
 warnings = []
 _boost = {"k": 1.0}  # text scale-up for tall frames (stories, pins) so they don't feel empty
+_ctx = {"W": 1080, "tag": "", "contrast": "fix"}
+contrast_report = []
+
+# Smallest legible text, as a fraction of the image WIDTH. Social images are shown
+# about 375 px wide on a phone, so 0.027 x 1080 = 29 px renders at roughly 10 px.
+MIN_TEXT = {"label": 0.026, "footer": 0.024, "body": 0.029, "fact": 0.028, "cta": 0.028, "headline": 0.05}
+
+
+def mp(role):
+    return int(_ctx["W"] * MIN_TEXT[role])
 
 
 def warn(msg):
@@ -230,12 +240,15 @@ def palette(brand, kind):
                 "btn_fg": dark_fill, "line": mix(od, dark_fill, 0.35), "pill_text": od,
                 "link": lighten(c["link"], 0.45), "value": lighten(c["value"], 0.35), "bg": dark_fill}
     if kind == "surface":
+        light = lum(c["surface"]) > 0.35
         return {"dark": False, "text": rgb(c["surface_text"]), "muted": rgb(c["muted"]), "btn_bg": rgb(c["primary"]),
                 "btn_fg": rgb(c["on_primary"]), "line": rgb(c["border"]), "pill_text": rgb(c["surface_text"]),
-                "link": rgb(c["link"]), "value": rgb(c["value"]), "bg": rgb(c["surface"])}
+                "link": rgb((c.get("link_on_light") if light else None) or c["link"]),
+                "value": rgb((c.get("value_on_light") if light else None) or c["value"]), "bg": rgb(c["surface"])}
     return {"dark": False, "text": rgb(c["text"]), "muted": rgb(c["muted"]), "btn_bg": rgb(c["primary"]),
             "btn_fg": rgb(c["on_primary"]), "line": rgb(c["border"]), "pill_text": rgb(c["text"]),
-            "link": rgb(c["link"]), "value": rgb(c["value"]), "bg": rgb(c["background"])}
+            "link": rgb(c.get("link_on_light") or c["link"]), "value": rgb(c.get("value_on_light") or c["value"]),
+            "bg": rgb(c["background"])}
 
 
 def bg_palette(brand):
@@ -413,12 +426,61 @@ def wrap(draw, text, f, max_w, tracking=0):
             cur = wd
     if cur:
         lines.append(cur)
+    # avoid a single short word stranded on the last line
+    if len(lines) >= 2 and len(lines[-1].split()) == 1 and len(lines[-2].split()) >= 3:
+        prev = lines[-2].split()
+        cand = prev[-1] + " " + lines[-1]
+        if text_w(draw, cand, f, tracking) <= max_w:
+            lines[-2], lines[-1] = " ".join(prev[:-1]), cand
     return lines
 
 
 def line_h(f):
     a, d = f.getmetrics()
     return a + d
+
+
+def _lum_array(arr):
+    import numpy as np
+    a = arr.astype("float64") / 255.0
+    a = np.where(a <= 0.03928, a / 12.92, ((a + 0.055) / 1.055) ** 2.4)
+    return 0.2126 * a[..., 0] + 0.7152 * a[..., 1] + 0.0722 * a[..., 2]
+
+
+def _hex(c):
+    return "#%02X%02X%02X" % tuple(rgb(c))
+
+
+def _shift_lightness(c, dl):
+    import colorsys
+    r, g, b = (v / 255 for v in rgb(c))
+    h, l, s_ = colorsys.rgb_to_hls(r, g, b)
+    l = min(max(l + dl, 0.0), 1.0)
+    return tuple(int(round(v * 255)) for v in colorsys.hls_to_rgb(h, l, s_))
+
+
+def _ratio(c_lum, bg_lum):
+    return (max(c_lum, bg_lum) + 0.05) / (min(c_lum, bg_lum) + 0.05)
+
+
+def fix_contrast(color, bg_lums, need):
+    """Return (color, before, after). bg_lums = (darkest, median, brightest) luminance behind the text."""
+    lo, mid, hi = bg_lums
+    cl = lum(color)
+    light_text = cl >= mid
+    worst = lo if light_text else hi          # the background pixels closest to the text color
+    before = _ratio(cl, worst)
+    if before >= need:
+        return rgb(color), before, before
+    c = rgb(color)
+    step = 0.02 if light_text else -0.02
+    for _ in range(60):
+        c = _shift_lightness(c, step)
+        if _ratio(lum(c), worst) >= need:
+            return c, before, _ratio(lum(c), worst)
+    # same hue can't get there: fall back to whichever of near-black / near-white works
+    best = max([(10, 10, 10), (255, 255, 255)], key=lambda k: min(_ratio(lum(k), lo), _ratio(lum(k), hi)))
+    return best, before, min(_ratio(lum(best), lo), _ratio(lum(best), hi))
 
 
 def draw_text(canvas, xy, s, f, fill, tracking=0, gradient=None):
@@ -435,6 +497,37 @@ def draw_text(canvas, xy, s, f, fill, tracking=0, gradient=None):
             cx += md.textlength(ch, font=f) + tracking * f.size
     else:
         md.text((0, 0), s, font=f, fill=255)
+    # --- WCAG check against the actual pixels behind the glyphs
+    mode = _ctx.get("contrast", "fix")
+    if mode != "off" and s.strip():
+        import numpy as np
+        X, Y = int(x), int(y)
+        region = canvas.crop((X, Y, X + w, Y + h))
+        near = np.array(mask.filter(ImageFilter.MaxFilter(5))) > 0
+        lums = _lum_array(np.array(region))[near]
+        if lums.size:
+            bg = (float(np.percentile(lums, 5)), float(np.median(lums)), float(np.percentile(lums, 95)))
+            large = f.size >= _ctx["W"] * 0.045       # headline-sized: WCAG large text
+            need = 3.0 if large else 4.5
+            colors = list(gradient) if gradient else [fill]
+            fixed = []
+            for col in colors:
+                new, before, after = fix_contrast(col, bg, need)
+                if before < need:
+                    entry = {"where": _ctx["tag"], "text": s[:40], "from": _hex(col), "to": _hex(new) if mode == "fix" else None,
+                             "ratio_before": round(before, 2), "ratio_after": round(after, 2) if mode == "fix" else None,
+                             "needed": need, "size_px": f.size}
+                    if not any(e["from"] == entry["from"] and e["where"] == entry["where"] for e in contrast_report):
+                        contrast_report.append(entry)
+                    if mode == "fix":
+                        warn(f"Contrast fixed: {_hex(col)} → {_hex(new)} for \"{s[:30]}\" ({before:.1f}:1 → {after:.1f}:1, needs {need}:1).")
+                    else:
+                        warn(f"Contrast too low: {_hex(col)} for \"{s[:30]}\" is {before:.1f}:1 (needs {need}:1).")
+                fixed.append(new if mode == "fix" else rgb(col))
+            if gradient:
+                gradient = fixed
+            else:
+                fill = fixed[0]
     fill_img = gradient_image(w, h, gradient) if gradient else Image.new("RGB", (w, h), fill)
     canvas.paste(fill_img, (int(x), int(y)), mask)
 
@@ -467,13 +560,13 @@ def build_block(draw, brand, variant, width, scale, pal, parts, base, hscale=1.0
             ops.append(("img", y, lg.resize((max(int(lg.width * lh / lg.height), 1), lh), Image.LANCZOS)))
             y += lh + gap(0.03)
         else:
-            f = font(F["wordmark"], gap(0.032))
+            f = font(F["wordmark"], max(gap(0.032), mp("label")))
             ops.append(("text", y, brand["name"], f, pal["text"], 0, None))
             y += line_h(f) + gap(0.028)
 
     eyebrow = v.get("eyebrow", brand.get("eyebrow"))
     if "eyebrow" in parts and eyebrow and st.get("eyebrow"):
-        f = font(F["label"], max(gap(0.019), 12))
+        f = font(F["label"], max(gap(0.019), mp("label")))
         s = eyebrow.upper()
         if st["eyebrow"] == "pill":
             px, py = int(f.size * 0.9), int(f.size * 0.55)
@@ -492,7 +585,7 @@ def build_block(draw, brand, variant, width, scale, pal, parts, base, hscale=1.0
         if emph is None and "gradient_text" in motifs and brand["gradient"] and len(hl.split()) > 1:
             emph = hl.split()[-1]
         lead, emph = split_emphasis(hl, emph or "")
-        hsize = max(int(base * 0.092 * scale * hscale), 18)
+        hsize = max(int(base * 0.092 * scale * hscale), mp("headline"))
         hf = font(F["heading"], hsize)
         lead_l = wrap(draw, lead, hf, width, track) if lead else []
         emph_l = wrap(draw, emph, hf, width, track) if emph else []
@@ -525,7 +618,7 @@ def build_block(draw, brand, variant, width, scale, pal, parts, base, hscale=1.0
     sub = v.get("subhead")
     if "subhead" in parts and sub:
         y += gap(0.02)
-        sf = font(F["accent"] if st.get("subhead_italic") else F["body"], max(gap(0.034), 14))
+        sf = font(F["accent"] if st.get("subhead_italic") else F["body"], max(gap(0.034), mp("body")))
         for ln in wrap(draw, sub, sf, width)[:3]:
             ops.append(("text", y, ln, sf, pal["muted"], 0, None))
             y += int(line_h(sf) * 1.12)
@@ -533,11 +626,11 @@ def build_block(draw, brand, variant, width, scale, pal, parts, base, hscale=1.0
     facts = v.get("facts") or []
     if "facts" in parts and facts:
         y += gap(0.03)
-        lf = font(F["body"], max(gap(0.03), 13))
-        vf = font(F["heading"], max(gap(0.034), 14))
+        lf = font(F["body"], max(gap(0.03), mp("fact")))
+        vf = font(F["heading"], max(gap(0.034), int(mp("fact") * 1.1)))
         def need(lf_, vf_):
             return max(text_w(draw, f_.get("label", ""), lf_) + text_w(draw, f_.get("value", ""), vf_) for f_ in facts[:4])
-        while need(lf, vf) + lf.size * 2 > width and lf.size > 11:
+        while need(lf, vf) + lf.size * 2 > width and lf.size > mp("fact"):
             lf, vf = font(F["body"], lf.size - 1), font(F["heading"], vf.size - 1)
         rh = max(line_h(lf), line_h(vf))
         row_w = min(width, int(max(text_w(draw, f_.get("label", ""), lf) + text_w(draw, f_.get("value", ""), vf) for f_ in facts[:4]) + rh * 5))
@@ -549,7 +642,7 @@ def build_block(draw, brand, variant, width, scale, pal, parts, base, hscale=1.0
     if "cta" in parts and cta:
         y += gap(0.045)
         bstyle = (brand.get("button") or {}).get("style", "solid")
-        cf = font(F["label"], max(gap(0.03 if bstyle != "link" else 0.026), 13))
+        cf = font(F["label"], max(gap(0.03 if bstyle != "link" else 0.026), mp("cta")))
         if bstyle == "link":
             s = cta.upper()
             ops.append(("link", y, s, cf, text_w(draw, s, cf, 0.12)))
@@ -631,16 +724,10 @@ def draw_block(canvas, ops, x, y, width, brand, pal, align="left"):
             ImageDraw.Draw(m).rounded_rectangle((0, 0, w - 1, h - 1), radius=rad, fill=255)
             if style == "gradient" and brand["gradient"]:
                 face, fg = gradient_image(w, h, brand["gradient"]), (255, 255, 255)
-                worst = min(contrast(fg, rgb(g)) for g in brand["gradient"])
-                if worst < 4.5:
-                    warn(f"Button text contrast drops to {worst:.1f}:1 on the gradient (WCAG AA needs 4.5:1). Consider the solid button style.")
             elif style == "outline":
                 face, fg = None, pal["text"]
             else:
                 face, fg = Image.new("RGB", (w, h), pal["btn_bg"]), pal["btn_fg"]
-                ratio = contrast(pal["btn_bg"], pal["btn_fg"])
-                if ratio < 4.5:
-                    warn(f"Button text contrast is {ratio:.1f}:1 (WCAG AA needs 4.5:1).")
             if face is not None:
                 canvas.paste(face, (int(ox), int(oy)), m)
             else:
@@ -648,22 +735,48 @@ def draw_block(canvas, ops, x, y, width, brand, pal, align="left"):
             draw_text(canvas, (ox + px, oy + py - 1), s, f, fg)
 
 
+DROP_ORDER = ("subhead", "facts", "eyebrow", "wordmark", "divider")
+
+
 def fit_block(draw, brand, variant, width, max_h, pal, parts, base, tag, max_lines=4, hscale=1.0):
-    scale = _boost["k"]
+    """Fit the block without going below the minimum legible sizes. If it still doesn't fit,
+    drop optional copy (subhead, facts, eyebrow, wordmark) before giving up."""
+    parts = tuple(parts)
+    dropped = []
+    if _ctx.get("H") and _ctx["W"] / _ctx["H"] >= 1.5:
+        max_lines = max(max_lines, 5)  # wide frames use narrow text columns
     while True:
-        ops, h, n = build_block(draw, brand, variant, width, scale, pal, parts, base, hscale)
-        if (h <= max_h and n <= max_lines) or scale <= 0.45:
+        scale = _boost["k"]
+        while True:
+            ops, h, n = build_block(draw, brand, variant, width, scale, pal, parts, base, hscale)
+            if (h <= max_h and n <= max_lines) or scale <= 0.45:
+                break
+            scale -= 0.05
+        if h <= max_h and n <= max_lines:
             break
-        scale -= 0.05
+        nxt = next((d for d in DROP_ORDER if d in parts and _has_part(variant, brand, d)), None)
+        if not nxt:
+            break
+        parts = tuple(p_ for p_ in parts if p_ != nxt)
+        dropped.append(nxt)
+    if dropped:
+        warn(f"{tag}: left out the {', '.join(dropped)} so the remaining text stays legible at this size.")
     if h > max_h or n > max_lines:
-        warn(f"{tag}: the text is too long for this size. Shorten the headline or subhead.")
+        warn(f"{tag}: the text is too long for this size even at the minimum legible size. Shorten the headline.")
     return ops, h
+
+
+def _has_part(variant, brand, part):
+    v = variant or {}
+    return {"subhead": bool(v.get("subhead")), "facts": bool(v.get("facts")),
+            "eyebrow": bool(v.get("eyebrow", brand.get("eyebrow")) and brand["style"].get("eyebrow")),
+            "wordmark": bool(brand.get("name") or brand.get("logo")), "divider": bool(brand["style"].get("divider"))}.get(part, False)
 
 
 def footer(canvas, brand, x, y, pal, base, align="left", width=0):
     if not brand.get("domain"):
         return
-    f = font(brand["fonts"]["label"], max(int(base * 0.022), 12))
+    f = font(brand["fonts"]["label"], max(int(base * 0.022), mp("footer")))
     s = brand["domain"]
     if align == "center":
         x = x + (width - text_w(ImageDraw.Draw(canvas), s, f)) / 2
@@ -943,7 +1056,7 @@ def layout_stats(canvas, p, sources, spec, brand, v, tag):
         val = str(fact.get("value", ""))
         while text_w(d, val, vf) > tw_ * 0.86 and vf.size > 14:
             vf = font(brand["fonts"]["heading"], vf.size - 2)
-        lf = font(brand["fonts"]["body"], max(int(th_ * 0.12), int(base * 0.022), 12))
+        lf = font(brand["fonts"]["body"], max(int(th_ * 0.12), mp("label")))
         lab = wrap(d, str(fact.get("label", "")), lf, tw_ * 0.84)[:2]
         block_h = line_h(vf) + len(lab) * int(line_h(lf) * 1.1) + int(th_ * 0.04)
         yy = y0 + (th_ - block_h) // 2
@@ -987,6 +1100,7 @@ def render(key, sources, spec, brand, variant, layout, tag):
     p = PLACEMENTS[key]
     W, H = p["w"], p["h"]
     _boost["k"] = 1.2 if H / W > 1.6 else (1.08 if H / W > 1.4 else 1.0)
+    _ctx.update({"W": W, "H": H, "tag": tag, "contrast": spec.get("contrast", "fix")})
     canvas = Image.new("RGB", (W, H), rgb(brand["colors"]["background"]))
     if spec.get("mode", "plain") != "ad":
         info = place_photo(canvas, (0, 0, W, H), sources, spec, tag)
@@ -1052,6 +1166,20 @@ def save(img, path, pil_fmt, quality):
     img.save(path, pil_fmt, **kw)
 
 
+def contrast_summary():
+    """One line per original color that failed, with the color it was changed to."""
+    seen = {}
+    for e in contrast_report:
+        k = (e["from"], e["to"])
+        if k not in seen:
+            seen[k] = {"from": e["from"], "to": e["to"], "ratio_before": e["ratio_before"], "ratio_after": e["ratio_after"],
+                       "needed": e["needed"], "example_text": e["text"], "where": [e["where"]]}
+        elif e["where"] not in seen[k]["where"]:
+            seen[k]["where"].append(e["where"])
+    return {"standard": "WCAG 2.2 AA: 4.5:1 for text, 3:1 for headline-size text, measured against the pixels behind each line",
+            "mode": _ctx.get("contrast", "fix"), "issues": list(seen.values())}
+
+
 def main(spec_path):
     spec_path = os.path.abspath(spec_path)
     spec_dir = os.path.dirname(spec_path)
@@ -1110,7 +1238,8 @@ def main(spec_path):
         sheet_path = os.path.join(out_dir, f"{name}_concepts.png")
         sheet(items, sheet_path, f"{name.replace('_', ' ')}: ad concepts",
               f"{p['label']} · {p['w']}×{p['h']} · pick one direction to apply to every size", thumb_h=560)
-        print(json.dumps({"stage": "concepts", "concept_sheet": sheet_path, "concepts": files, "warnings": warnings}, indent=2))
+        print(json.dumps({"stage": "concepts", "concept_sheet": sheet_path, "concepts": files,
+                          "contrast": contrast_summary(), "warnings": warnings}, indent=2))
         return
 
     layout = spec.get("layout", "editorial" if sources else "card")
@@ -1147,6 +1276,7 @@ def main(spec_path):
     if spec.get("post_content"):
         manifest["post_content"] = spec["post_content"]
     manifest["warnings"] = warnings
+    manifest["contrast"] = contrast_summary()
     mpath = os.path.join(out_dir, "manifest.json")
     if only and os.path.exists(mpath):
         with open(mpath) as f:
@@ -1166,7 +1296,7 @@ def main(spec_path):
               f"Layout: {LAYOUT_LABELS.get(layout, 'plain') if mode == 'ad' else 'plain'}")
     with open(mpath, "w") as f:
         json.dump(manifest, f, indent=2)
-    print(json.dumps({"stage": "final", "output_dir": out_dir, "files": [e["file"] for e in manifest["images"]],
+    print(json.dumps({"stage": "final", "contrast": contrast_summary(), "output_dir": out_dir, "files": [e["file"] for e in manifest["images"]],
                       "contact_sheet": sheet_path if items else None, "warnings": warnings}, indent=2))
 
 

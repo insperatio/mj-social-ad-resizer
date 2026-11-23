@@ -67,7 +67,8 @@ Ask the user for a homepage screenshot or their brand guidelines.
 | `colors.on_dark` | Text color on photos and dark backgrounds (e.g. cream instead of pure white) | `"#F6F0E2"` |
 | `colors.surface` / `surface_text` | Card color and its text, for the `card` layout | `"#F6F0E2"` / `"#1C1712"` |
 | `colors.link` | Color of link-style CTAs | `"#8B2E2E"` |
-| `colors.value` | Color of fact values (numbers, grams, minutes) | `"#3E6B3A"` |
+| `colors.value` | Color of fact values and emphasis words (numbers, grams, minutes) | `"#3E6B3A"` |
+| `colors.value_on_light` / `link_on_light` | Optional replacements for `value` / `link` on light backgrounds, for brand colors that fail contrast on white (e.g. a bright yellow). Without them, the script darkens the color automatically | `"#8A6100"` |
 | `fonts.accent` | Italic or display font for taglines (used when `style.subhead_italic` is true) | `{"path": "fonts/Vollkorn-Italic_wght.ttf", "variation": "Italic"}` |
 | `fonts.wordmark` | Font for the brand name when there is no logo (defaults to `label`) | `{"path": "fonts/Vollkorn_wght.ttf", "variation": "SemiBold"}` |
 | `tiles` | Colors for `stats` tiles: list of `{bg, fg}` | `[{"bg":"#EFF6FF","fg":"#0369A1"}]` |
@@ -132,4 +133,8 @@ Dark espresso and cream paper, serif headlines with italic taglines, uppercase t
 ```
 
 Fonts were fetched with `python3 scripts/fetch_font.py Vollkorn fonts` and `... Jost fonts`.
+
+## Contrast
+
+Brand colors are checked where they land, not in isolation. A bright yellow can pass on navy and fail on white. The renderer measures each line of text against the pixels behind it and adjusts failing colors (see `spec.md`, "Contrast report"). Record the brand's own accessible alternatives in `value_on_light` / `link_on_light` when the guidelines provide them.
 

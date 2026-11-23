@@ -69,6 +69,7 @@ Same file, with:
 | `concept_placement` | no | Size used for concepts. Default `meta_portrait`. |
 | `layout` | final, ad mode | The approved layout. |
 | `variants` | ad mode | `{id, headline, emphasis?, subhead?, cta?, eyebrow?, facts?}`. `emphasis` must be the end of the headline; those words get the gradient (or the brand's `value` color). `facts` is a list of `{value, label}` (e.g. `{"value": "11.6 g", "label": "protein per 100 cal"}`), shown as stat tiles or menu-style rows. With one variant, file names have no variant suffix. |
+| `contrast` | no | `fix` (default): every line of text is measured against the pixels behind it, and colors below WCAG 2.2 AA (4.5:1, or 3:1 for headline-size text) are adjusted within the same hue. `warn`: report only. `off`: no check (not recommended). |
 | `facts_on_photo_layouts` | no | Show `facts` in `editorial`, `full_bleed`, `split` and `band` too. Default false. |
 | `placements` | no | Keys from `placements.md`. Default: all. |
 | `format` | no | `webp` (default), `png`, `jpg`. |
@@ -80,8 +81,30 @@ Same file, with:
 | `only` | no | Re-render just these, e.g. `["pinterest_B"]` or `["meta_story"]`; the manifest is merged. |
 | `logo_on_plain` | no | Plain mode: add the brand logo in a corner (default true when a logo exists). |
 
+## Contrast report
+
+Both stages print a `contrast` section (also saved in `manifest.json`):
+
+```json
+"contrast": {"standard": "WCAG 2.2 AA ...", "mode": "fix",
+  "issues": [{"from": "#FDB913", "to": "#BE8802", "ratio_before": 1.7, "ratio_after": 3.07,
+              "needed": 3.0, "example_text": "grow a business.", "where": ["concept A", "concept B"]}]}
+```
+
+## Minimum text sizes
+
+Text never goes below these sizes. They're a share of the image width, so they read at about 10–11 px on a phone:
+- tags and labels: 2.6%
+- domain: 2.4%
+- body and subhead: 2.9%
+- facts and CTA: 2.8%
+- headline: 5%
+
+If copy doesn't fit, the subhead, facts, tag and wordmark are left out in that order, with a warning.
+
 ## Warnings the script prints
 - A photo was enlarged (soft result).
-- Button text contrast is below WCAG AA 4.5:1 (solid or gradient buttons).
+- Contrast fixes (or, in `warn` mode, contrast failures) for any text, including buttons, tags and text over photos.
+- Copy left out to keep the rest legible at a size.
 - Text too long for a size.
 - A brand file (font, logo) was not found, so the default was used.

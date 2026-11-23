@@ -92,6 +92,19 @@ Write the spec (see `references/spec.md`) with `"stage": "concepts"` and run:
 python3 scripts/make_images.py spec.json
 ```
 
+**Check contrast and legibility before showing anything.** The script measures every line of text against the pixels behind it and fixes colors that fail WCAG 2.2 AA:
+- Normal text needs 4.5:1. Headline-size text needs 3:1.
+- A failing color is darkened or lightened within the same hue.
+- The `contrast` section of the output lists each fix: the original and new color, and the ratio before and after.
+
+Tell the user about each fix in plain words. For example: "Your yellow (#FDB913) is only 1.7:1 on white, so I darkened it to #BE8802 for the headline on light backgrounds. It stays bright yellow on navy." Then offer the alternatives:
+- choose their own replacement with `colors.value_on_light` / `colors.link_on_light`
+- or pick a layout where the brand color sits on a dark background (`band`, `card`, `full_bleed`)
+
+Never turn the check off to keep a brand color. `"contrast": "warn"` only reports problems without fixing them. Use it only if the user explicitly asks, and tell them the files won't meet AA.
+
+Text never goes below a minimum legible size. That is about 10–11 px when the image is shown 375 px wide on a phone, i.e. 2.4–2.9% of the image width. If the copy doesn't fit, the script leaves out optional copy first (subhead, then facts, then the small tag above the headline) and says so. Tell the user, and suggest shorter copy.
+
 Show the concept sheet and ask which direction to use. Make any changes the user asks for (copy, `emphasis`, colors, layout DNA) and re-run until they approve.
 
 **Don't render the final sizes until the user approves a concept.**
@@ -105,7 +118,7 @@ Set `"stage": "final"` and `"layout": "<approved>"`, list the placements, and ru
 
 Show the contact sheet. Fix single sizes on request with `"only": ["pinterest_B"]`. You can also move the focus point, change `fill`, or shorten text.
 
-**Warnings:** the script prints them (enlarged photos, low contrast, text too long, missing fonts). Tell the user about the ones that matter.
+**Warnings:** the script prints them (contrast fixes, copy left out to stay legible, enlarged photos, missing fonts). Tell the user about the ones that matter, and summarize the contrast fixes once rather than once per size.
 
 Plain mode skips Steps 2, 3 and 6. Use `"stage": "final"` with no layout.
 
@@ -125,5 +138,6 @@ Confirm the files are in the folder. Summarize: the number of images, the sizes,
 
 ## Notes
 - The script draws all text itself, so it's spelled exactly as written.
+- Accessibility is not optional. Every exported image meets WCAG 2.2 AA text contrast and the minimum text sizes, unless the user explicitly chose `"contrast": "warn"`.
 - Make each brand look like itself. If two brands' concepts come out structurally the same, the layout DNA wasn't captured; go back to the site.
 - Bundled font: Inter (SIL Open Font License). Downloaded Google Fonts are OFL or Apache licensed.
