@@ -63,7 +63,8 @@ Ask the user for a homepage screenshot or their brand guidelines.
 | `button.radius` | `"pill"` or a number of px | `"pill"` |
 | `motifs` | Any of `gradient_text` (key words in the gradient), `gradient_underline`, `eyebrow_pill` / `eyebrow_caps` (shortcuts for `style.eyebrow`), `gradient_divider`, `dots` (row of brand-color dots) | `["gradient_text","eyebrow_pill","dots"]` |
 | `eyebrow` | Short tag text, 2–4 words | `"Product design · UX · Systems"` |
-| `logo` / `logo_on_dark` | Logo PNGs with transparency. Without one, `name` is set as a wordmark | `"logo.png"` |
+| `logo` / `logo_on_dark` | Logo PNGs with transparency, for light and dark backgrounds. Make them with `scripts/prepare_logo.py`. Without a logo, `name` is set as a text wordmark | `"logo/logo.png"` |
+| `logo_scale` | Logo height in text blocks, as a share of the short side (default 0.07) | `0.08` |
 | `colors.on_dark` | Text color on photos and dark backgrounds (e.g. cream instead of pure white) | `"#F6F0E2"` |
 | `colors.surface` / `surface_text` | Card color and its text, for the `card` layout | `"#F6F0E2"` / `"#1C1712"` |
 | `colors.link` | Color of link-style CTAs | `"#8B2E2E"` |

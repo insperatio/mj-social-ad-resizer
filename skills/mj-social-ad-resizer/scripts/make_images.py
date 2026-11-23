@@ -532,6 +532,39 @@ def draw_text(canvas, xy, s, f, fill, tracking=0, gradient=None):
     canvas.paste(fill_img, (int(x), int(y)), mask)
 
 
+def logo_image(brand, dark, height, max_w):
+    """Pick the logo version for the background and size it (height in px, capped at max_w wide)."""
+    path = brand.get("logo_on_dark") if dark and brand.get("logo_on_dark") else brand.get("logo")
+    if not path:
+        return None
+    lg = Image.open(path).convert("RGBA")
+    h = max(int(height), 8)
+    w = max(int(lg.width * h / lg.height), 1)
+    if w > max_w:
+        w, h = int(max_w), max(int(lg.height * max_w / lg.width), 8)
+    return lg.resize((w, h), Image.LANCZOS)
+
+
+def paste_logo(canvas, lg, x, y):
+    """Paste a logo; if it would be hard to see on what's behind it, put it on a small contrasting chip."""
+    import numpy as np
+    x, y = int(x), int(y)
+    a = np.array(lg)
+    solid = a[a[..., 3] > 200][:, :3]
+    if len(solid):
+        logo_l = float(np.median(_lum_array(solid.reshape(-1, 1, 3))))
+        behind = _lum_array(np.array(canvas.crop((x, y, x + lg.width, y + lg.height)).convert("RGB")))
+        bg_l = float(np.median(behind))
+        if _ratio(logo_l, bg_l) < 2.0:
+            pad = max(int(lg.height * 0.35), 6)
+            chip = (255, 255, 255) if logo_l < 0.4 else (17, 17, 17)
+            ImageDraw.Draw(canvas).rounded_rectangle((x - pad, y - pad, x + lg.width + pad, y + lg.height + pad),
+                                                     radius=pad, fill=chip)
+            warn(f"{_ctx['tag']}: the logo was hard to see on this background, so it sits on a "
+                 f"{'white' if chip[0] > 128 else 'dark'} chip. A reversed logo would look cleaner.")
+    canvas.paste(lg, (x, y), lg)
+
+
 def split_emphasis(headline, emphasis):
     if emphasis and headline.rstrip().endswith(emphasis.strip()):
         return headline.rstrip()[: -len(emphasis.strip())].rstrip(), emphasis.strip()
@@ -553,12 +586,10 @@ def build_block(draw, brand, variant, width, scale, pal, parts, base, hscale=1.0
     gap = lambda k: int(base * k * scale)
 
     if "wordmark" in parts and (brand.get("name") or brand.get("logo")):
-        logo = brand.get("logo_on_dark") if pal["dark"] and brand.get("logo_on_dark") else brand.get("logo")
-        if logo:
-            lg = Image.open(logo).convert("RGBA")
-            lh = gap(0.05)
-            ops.append(("img", y, lg.resize((max(int(lg.width * lh / lg.height), 1), lh), Image.LANCZOS)))
-            y += lh + gap(0.03)
+        lg = logo_image(brand, pal["dark"], max(gap(brand.get("logo_scale", 0.07)), mp("label") * 1.8), width * 0.55)
+        if lg:
+            ops.append(("img", y, lg))
+            y += lg.height + gap(0.03)
         else:
             f = font(F["wordmark"], max(gap(0.032), mp("label")))
             ops.append(("text", y, brand["name"], f, pal["text"], 0, None))
@@ -668,7 +699,7 @@ def draw_block(canvas, ops, x, y, width, brand, pal, align="left"):
             draw_text(canvas, (ox_for(text_w(draw, s, f, track)), oy), s, f, col, track, grad)
         elif kind == "img":
             lg = op[2]
-            canvas.paste(lg, (int(ox_for(lg.width)), int(oy)), lg)
+            paste_logo(canvas, lg, ox_for(lg.width), oy)
         elif kind == "bar":
             _, _, uw, bh = op
             m = Image.new("L", (uw, bh), 0)
@@ -889,7 +920,7 @@ def layout_band(canvas, p, sources, spec, brand, v, tag):
     d = ImageDraw.Draw(canvas)
     band_col = rgb(brand["colors"]["band"])
     pal = palette(brand, "dark") if readable_on(band_col) == (255, 255, 255) else dict(palette(brand, "light"), text=(10, 10, 10))
-    parts = ("eyebrow", "headline", "divider", "subhead", "facts", "cta")
+    parts = ("wordmark", "eyebrow", "headline", "divider", "subhead", "facts", "cta")
     if W / H >= 1.5:
         bw = int(W * 0.42)
         info = place_photo(canvas, (0, 0, W - bw, H), sources, spec, tag)
@@ -929,7 +960,14 @@ def layout_card(canvas, p, sources, spec, brand, v, tag):
     d = ImageDraw.Draw(canvas)
     top_y = max(int(base * 0.06), st_ + int(base * 0.03))
     bottom_m = max(int(base * 0.09), sb + int(base * 0.05))
-    if brand.get("name"):
+    lg = logo_image(brand, True, base * 0.06, W * 0.4)
+    if lg:
+        if wide:
+            paste_logo(canvas, lg, int(base * 0.08), int(base * 0.08))
+        else:
+            paste_logo(canvas, lg, (W - lg.width) / 2, top_y)
+            top_y += lg.height + int(base * 0.035)
+    elif brand.get("name"):
         f = font(brand["fonts"]["wordmark"], int(base * (0.045 if wide else 0.04)))
         if wide:
             draw_text(canvas, (int(base * 0.08), int(base * 0.08)), brand["name"], f, dark["text"])
@@ -1105,11 +1143,15 @@ def render(key, sources, spec, brand, variant, layout, tag):
     if spec.get("mode", "plain") != "ad":
         info = place_photo(canvas, (0, 0, W, H), sources, spec, tag)
         if brand.get("logo") and spec.get("logo_on_plain", True):
-            lg = Image.open(brand["logo"]).convert("RGBA")
-            lw = int(min(W, H) * 0.16)
-            lg = lg.resize((lw, int(lg.height * lw / lg.width)), Image.LANCZOS)
+            import numpy as np
             m = int(min(W, H) * 0.045)
-            canvas.paste(lg, (W - lw - m, max(m, int(H * p["safe_top"]) + m)), lg)
+            corner = canvas.crop((int(W * 0.6), max(m, int(H * p["safe_top"])), W, int(H * 0.3)))
+            dark_corner = float(np.median(_lum_array(np.array(corner)))) < 0.35
+            pos = spec.get("logo_position", "top-right")
+            lg = logo_image(brand, dark_corner, min(W, H) * 0.07, W * 0.3)
+            x = W - lg.width - m if "right" in pos else m
+            y = max(m, int(H * p["safe_top"]) + m) if "top" in pos else H - lg.height - max(m, int(H * p["safe_bottom"]) + m)
+            paste_logo(canvas, lg, x, y)
         return canvas, info
     return canvas, LAYOUT_FN[layout](canvas, p, sources, spec, brand, variant, tag)
 
@@ -1186,6 +1228,17 @@ def main(spec_path):
     with open(spec_path) as f:
         spec = json.load(f)
     brand = load_brand(spec, spec_dir)
+    if spec.get("logo"):  # logo files given in the spec override the brand profile
+        for k in ("logo", "logo_on_dark"):
+            if spec["logo"].get(k):
+                pth = spec["logo"][k] if os.path.isabs(spec["logo"][k]) else os.path.join(spec_dir, spec["logo"][k])
+                brand[k] = pth if os.path.exists(pth) else brand.get(k)
+    if spec.get("use_logo") is False:
+        brand["logo"] = brand["logo_on_dark"] = None
+    if spec.get("show_wordmark") is False and not brand.get("logo"):
+        brand["name"] = ""
+    if spec.get("mode") == "ad" and brand.get("logo") is None and brand.get("logo_on_dark"):
+        brand["logo"] = brand["logo_on_dark"]
     spec["_brand"] = brand
 
     name = spec.get("name", "Social").replace(" ", "_")

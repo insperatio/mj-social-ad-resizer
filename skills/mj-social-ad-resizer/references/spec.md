@@ -69,6 +69,10 @@ Same file, with:
 | `concept_placement` | no | Size used for concepts. Default `meta_portrait`. |
 | `layout` | final, ad mode | The approved layout. |
 | `variants` | ad mode | `{id, headline, emphasis?, subhead?, cta?, eyebrow?, facts?}`. `emphasis` must be the end of the headline; those words get the gradient (or the brand's `value` color). `facts` is a list of `{value, label}` (e.g. `{"value": "11.6 g", "label": "protein per 100 cal"}`), shown as stat tiles or menu-style rows. With one variant, file names have no variant suffix. |
+| `logo` | no | `{"logo": "logo/logo.png", "logo_on_dark": "logo/logo_on_dark.png"}`, usually from `prepare_logo.py`. Overrides the brand profile's logo files. |
+| `use_logo` | no | `false` when the user doesn't want a logo. Default: use the logo if one exists. |
+| `show_wordmark` | no | `false` to also drop the brand name shown as text when there's no logo. |
+| `logo_position` | no | Plain mode: `top-right` (default), `top-left`, `bottom-right`, `bottom-left`. |
 | `contrast` | no | `fix` (default): every line of text is measured against the pixels behind it, and colors below WCAG 2.2 AA (4.5:1, or 3:1 for headline-size text) are adjusted within the same hue. `warn`: report only. `off`: no check (not recommended). |
 | `facts_on_photo_layouts` | no | Show `facts` in `editorial`, `full_bleed`, `split` and `band` too. Default false. |
 | `placements` | no | Keys from `placements.md`. Default: all. |
@@ -79,7 +83,7 @@ Same file, with:
 | `link`, `campaign` | no | Builds a tracking (UTM) link for each platform in the manifest. |
 | `post_content` | no | Captions, alt text, pin titles; copied into `manifest.json`. |
 | `only` | no | Re-render just these, e.g. `["pinterest_B"]` or `["meta_story"]`; the manifest is merged. |
-| `logo_on_plain` | no | Plain mode: add the brand logo in a corner (default true when a logo exists). |
+| `logo_on_plain` | no | Plain mode: add the logo in a corner (default true when a logo exists and `use_logo` isn't false). |
 
 ## Contrast report
 

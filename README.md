@@ -59,7 +59,8 @@ Claude asks only for what you haven't already given it:
 | Platforms | Any of Meta (Facebook/Instagram), LinkedIn, X, Pinterest |
 | Plain image or ad? | **Plain** = just resized photos. **Ad** = on-brand design with headline and button |
 | Ad copy | Headline, optional subhead, call to action, and who the ad is for. Add key numbers (e.g. "11.6 g protein per 100 cal", "+134% lift") to get stat tiles or menu-style fact rows |
-| Branding | Your website URL. Brand guidelines, a logo (PNG with transparent background) and font files are optional extras |
+| Branding | Your website URL. Brand guidelines and font files are optional extras |
+| Logo? | Yes or no. If yes, Claude can **grab it from your website** or you can **upload it** (SVG, or a PNG with a transparent background, is best). It removes backgrounds, trims the logo, and makes a white version for dark backgrounds when your logo is one color |
 | A/B variants? | Yes = Claude writes 2–3 headline versions for you to approve |
 | Post text for each platform? | Yes = captions, hashtags, alt text and pin titles |
 | Format | PNG, JPG or WebP |
@@ -148,7 +149,7 @@ Platforms change their specs from time to time; tell Claude if you need a differ
 - **Bigger photos look better.** If Claude warns that a photo was upscaled, use a larger original.
 - **Short headlines work best.** Aim for under about 40 characters so the text stays large on small sizes.
 - **Check the spelling before rendering.** Text is printed exactly as written.
-- **Logos:** use a PNG with a transparent background.
+- **Logos:** an SVG is best. A PNG with a transparent background works too.
 - **Contrast fixes:** if a brand color fails on a background (e.g. yellow on white), Claude tells you what it changed. You can give your own accessible version instead, or pick a layout where that color sits on a dark background.
 
 ## Troubleshooting
@@ -161,6 +162,7 @@ Platforms change their specs from time to time; tell Claude if you need a differ
 | Subject cropped out | Tell Claude where the subject is ("keep the product on the left") |
 | Ads don't look like my site | Give Claude a homepage screenshot, or say what's missing ("we use a serif font", "add the gradient underline") |
 | Wrong font | Upload your font files (TTF/OTF) |
+| Logo looks wrong or is on a white box | Upload an SVG, or a reversed (white) version for dark backgrounds |
 
 ---
 
@@ -172,6 +174,7 @@ skills/mj-social-ad-resizer/
   scripts/make_images.py    Crops, resizes, adds text, writes the files
   scripts/fetch_font.py     Downloads Google Fonts (upright + italic) for the brand profile
   scripts/fetch_site_images.py  Downloads photos from your own site when you have none
+  scripts/prepare_logo.py   Finds your logo on your site or prepares an uploaded one
   references/brand.md       How the brand profile is read from a website
   references/layouts.md     The layouts, layout DNA, and how concepts are chosen
   references/placements.md  Sizes, safe zones, caption limits

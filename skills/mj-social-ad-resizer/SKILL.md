@@ -25,11 +25,14 @@ Ask in one message, leaving out anything already given:
    - Headline, optional subhead or tagline, and a call to action.
    - Who the ad is for. This shapes the wording and is not printed.
    - Optional **key facts or numbers**, e.g. "11.6 g protein per 100 cal" or "+134% referral lift". These become stat tiles or menu-style rows.
-5. **Brand source (ad mode).** The website URL, plus any brand guidelines, logo or font files.
-6. **A/B variants?** If yes, write 2–3 headline/CTA versions (the user's is A) and get approval before rendering.
-7. **Post text for each platform?**
-8. **Format:** PNG, JPG or WebP (WebP quality 85 by default).
-9. **Link (optional)** for tracking links.
+5. **Brand source (ad mode).** The website URL, plus any brand guidelines or font files.
+6. **Logo.** Always ask: "Do you want your logo on the ads?"
+   - **No:** set `"use_logo": false`. The brand name may still appear as text; set `"show_wordmark": false` to remove it too.
+   - **Yes:** ask "Should I grab it from your website, or would you like to upload it?" Uploading is best for exact colors: SVG, or a PNG with a transparent background at least 600 px wide. A reversed (white) version for dark backgrounds is welcome too.
+7. **A/B variants?** If yes, write 2–3 headline/CTA versions (the user's is A) and get approval before rendering.
+8. **Post text for each platform?**
+9. **Format:** PNG, JPG or WebP (WebP quality 85 by default).
+10. **Link (optional)** for tracking links.
 
 ## Step 2: Build the brand profile (ad mode)
 
@@ -57,6 +60,37 @@ Follow `references/brand.md` and `references/layouts.md` to write `brand.json`.
 - Paid or system fonts: use the closest free match (bundled Inter for clean sans-serifs, or a similar Google Font). Say which font you substituted, and offer to use the user's own font files.
 
 **Confirm with the user:** summarize the look and the layout DNA in plain words. For example: "Centered, menu-card style: cream paper card with a double rule on espresso, serif headline, italic tagline, small caps labels, ornament divider, red text-link CTA."
+
+## Step 2b: Prepare the logo (if they want one)
+
+**Uploaded logo:** run `python3 scripts/prepare_logo.py prepare <file> logo/`.
+
+**From the website:** run `python3 scripts/prepare_logo.py from-url <url> logo/`. It looks for a header or nav logo (an image or inline SVG), then the JSON-LD logo, then the site icon. If the sandbox can't reach the site, use a browser tool:
+1. Open the site and run:
+   ```js
+   const el = document.querySelector('header [class*=logo], header a[href="/"] svg, header a[href="/"] img, [class*=logo] svg, [class*=logo] img, a[aria-label*=home i] svg');
+   el ? (el.tagName.toLowerCase() === 'svg' ? el.outerHTML : (el.currentSrc || el.src)) : 'none'
+   ```
+2. For an inline SVG, save the returned markup to `logo/logo_download.svg` and run `prepare` on it.
+3. For an image URL, open it on its own and take a screenshot saved to disk, crop to the logo, and run `prepare` on that. The solid background is removed automatically; use `--bg #RRGGBB` if it isn't.
+4. If none of that works, ask the user to upload the logo.
+
+**What `prepare` does:**
+- converts SVG to PNG and removes a solid background
+- trims empty space
+- returns `logo` (for light backgrounds) and `logo_on_dark`
+- for a single-color logo, makes the opposite version automatically (e.g. white for dark backgrounds)
+- for a multi-color logo, it can't, so ask the user for a reversed version
+
+**Show the prepared logo to the user and confirm it's the right one.** If a reversed version was generated, ask whether their brand allows a white logo.
+
+Put the paths in `brand.json` (`logo`, `logo_on_dark`) or in the spec's `"logo": {"logo": ..., "logo_on_dark": ...}`.
+
+**How the renderer places it:**
+- The logo replaces the text wordmark in each layout.
+- The renderer picks the right version for each background.
+- If a logo would be hard to see, it sits on a small contrasting chip and a warning is shown.
+- In plain mode, it goes in a corner (`"logo_position": "top-right"` by default).
 
 ## Step 3: Photos from the brand's own site (when the user has none)
 
