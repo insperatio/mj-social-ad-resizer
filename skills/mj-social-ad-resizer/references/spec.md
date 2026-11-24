@@ -1,6 +1,74 @@
 # Spec file reference
 
-## Concepts stage (ad mode)
+Ads (ad mode) are built with `scripts/html_ads.py` in two runs: a **snapshot** of every option at one size, then the **final** sizes for the options the user picked. Plain mode (photo resizing, no text) still uses `make_images.py` directly.
+
+## Snapshot (ad mode)
+
+```bash
+python3 scripts/html_ads.py snapshot spec.json
+```
+
+```json
+{
+  "name": "Insperatio",
+  "output_dir": "/Users/me/Downloads/insperatio-ads",
+  "mode": "ad",
+  "brand": "brand.json",
+  "site_layout": "site_layout.html",
+  "images": {
+    "wide": {"path": "photos/team.jpg", "focus": {"x": 0.5, "y": 0.42}, "subject": {"x0": 0.06, "y0": 0.22, "x1": 0.98, "y1": 0.92}},
+    "tall": {"path": "photos/meeting.jpg", "focus": {"x": 0.55, "y": 0.66}}
+  },
+  "snapshot_placement": "meta_portrait",
+  "variants": [
+    {"id": "A",
+     "eyebrow": "Brand · Marketing · Operations",
+     "headline": "Grow with clarity, *not chaos*",
+     "subhead": "Strategy, design and systems for growing teams.",
+     "cta": "Book a free consultation",
+     "bullets": ["Brand & messaging that builds trust", "High-converting website design", "Marketing plans with measurable results"],
+     "question": "Tired of marketing that feels *scattered?*",
+     "answer": "Get strategy, design and systems that actually work.",
+     "punchline": "You run the business.\nWe build the systems.",
+     "emoji": "🚀",
+     "poster": [["Your", 1], ["brand", 2], ["deserves", 1], ["better", 2]],
+     "highlight": "not chaos",
+     "fine": "Free discovery call"}
+  ]
+}
+```
+
+Writes `<Name>_snapshot.png` (every option, numbered) and `snapshot/options.json`, and prints each option's number, id, kind (`site`, `template`, `classic`) and any issues. Options are numbered in this order: the website style, the 11 templates (`references/templates.md`), then the classic layouts (`references/layouts.md`). An option is left out, with a warning, when its copy or photo is missing (e.g. no bullets for `headline_3_bullets`, no `facts` for `stats`).
+
+Optional: `"templates": [...]` and `"classic": [...]` to limit what's shown (default: all), `"snapshot_placement"` (default `meta_portrait`).
+
+## Final (ad mode)
+
+Same file, plus the user's picks and the placements:
+
+```json
+{
+  "picks": ["site", "headline_3_bullets", "split"],
+  "placements": ["meta_square", "meta_portrait", "meta_story"],
+  "format": "png"
+}
+```
+
+```bash
+python3 scripts/html_ads.py final spec.json
+```
+
+Each pick gets its own subfolder (`site/`, `headline_3_bullets/`, `split/`) with one file per placement and variant (`Insperatio_site_IG-4x5.png`), plus `<Name>_contact-sheet.png` and one `manifest.json` for everything. Classic picks are rendered by `make_images.py` with the same spec. `"only": ["site:meta_story"]` (or a pick id, or a placement) re-renders just those.
+
+The final output prints `contrast_fixes` (from → to, ratio before/after, the text) and `warnings` (dropped copy, enlarged photos, photo swapped for a gradient, logo height-capped, contrast that couldn't be fixed). Report the ones that matter.
+
+---
+
+# Classic renderer (make_images.py)
+
+Used directly for plain mode, and by `html_ads.py` for the classic layouts.
+
+## Concepts stage (classic only)
 
 ```json
 {
