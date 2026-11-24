@@ -5,7 +5,12 @@ Free agent skill that turns your website and photos into on-brand social images 
 - **Plain mode:** crops and resizes your photo for every placement you pick.
 - **Ad mode:** reads your website's look (colors, fonts, gradients, background patterns, button style) **and its layout patterns** (centered or left-aligned, photo shapes, frames, dividers, label and link styles), so each brand gets its own structure.
 - **No photo? No problem:** use photos from your own site, or go photo-free with menu-style cards, typographic posters or stat tiles.
-- **Concepts first:** see 3–4 layout directions side by side, pick one, then every size is rendered in that style.
+- **Every option in one snapshot:** one numbered sheet with
+  - an ad modeled on **your own website's hero** (not a template),
+  - **11 HTML templates** (headline + 3 bullets, icon list, question + checks, diagonal photo, chevron photo, punchy photo, type + emoji, stacked poster, gradient minimal, mosaic, highlight box),
+  - **8 classic layouts** (editorial, full bleed, split, band, card, centered, stats, type only).
+
+  Pick as many as you like; only those are built in every size.
 - Optional **A/B variants** and **post text for each platform** (captions, alt text, hashtags, UTM links).
 - Exports **PNG, JPG or WebP** to a folder you choose, with a contact sheet and a `manifest.json`.
 - **Accessible by default:** every line of text is checked against the pixels behind it (WCAG 2.2 AA), and failing brand colors are adjusted within the same hue. Text never goes below a size that's readable on a phone; extra copy is left out first, and you're told.
@@ -15,6 +20,8 @@ Free agent skill that turns your website and photos into on-brand social images 
 - Warns about low-resolution photos.
 
 No AI image generation, no API keys, and it never publishes or schedules anything.
+
+**Requirements:** Python 3 with Pillow, plus Playwright and Google Chrome (or `playwright install chromium`) for the website-style option and the HTML templates.
 
 ---
 
@@ -41,7 +48,7 @@ npx skills add insperatio/mj-social-ad-resizer
 
 Attach your photo and ask, for example:
 
-> Build me an ad for Meta. Headline: "Let's work together". CTA: "Book a call". Use marianajohnels.com for branding (colors, fonts, graphic elements). Show concepts for approval, then save PNGs to my Downloads folder.
+> Build me an ad for Meta. Headline: "Let's work together". CTA: "Book a call". Use marianajohnels.com for branding (colors, fonts, graphic elements). Show me all the options, then save PNGs to my Downloads folder.
 
 > Resize this photo for Meta, LinkedIn and X. No text.
 
@@ -82,22 +89,27 @@ Sites built with JavaScript read best when Claude has a browser tool. Without on
 
 **Fonts:** Google Fonts are downloaded automatically. Paid or system fonts can't be downloaded, so Claude uses the closest free match and tells you which one. Upload your font files if you want an exact match.
 
-### 4. Pick a concept
+### 4. Pick from the snapshot
 
-You get a concept sheet with 3–4 directions at one size. Claude picks them to fit your brand's layout patterns:
+You get one numbered sheet with every option at one size:
 
-| Concept | Look | Needs a photo |
-|---|---|---|
-| Editorial | Your site's background, headline on top, photo below (in your photo shape) | yes |
-| Full bleed | Photo fills the frame, dark gradient behind the text | yes |
-| Split panel | Brand panel on one side, photo on the other | yes |
-| Color band | Photo with a solid brand-color band holding the text | yes |
-| Card | A paper or white card over the photo or a dark background, with your frame, divider and fact rows | optional |
-| Centered | Symmetrical stack, photo in your brand's shape, or a typographic poster | optional |
-| Stat tiles | Headline plus big-number tiles in your colors | no |
-| Type only | A large headline on your brand background | no |
+| # | Option | What it is | Needs a photo |
+|---|---|---|---|
+| 1 | Website style | Modeled on your homepage hero: its background, overlays, type, button and composition. Built for your brand, not a template | uses the hero's own images |
+| | Headline + 3 bullets | Photo, headline, three icon bullets, footer band with your logo and brand shapes | yes |
+| | Icon list | Two-tone headline over large icon rows | no |
+| | Question + checks | "Tired of…?" question, one-line answer, check list | no |
+| | Diagonal photo | Photo wedge, accent corner holding the logo, fine print | yes |
+| | Chevron photo | Photo with a V-cut edge, centered headline and button | yes |
+| | Punchy photo | Dark full-bleed photo, all-caps punchline | yes |
+| | Type + emoji | Big headline mixing your font with an italic serif, emoji sticker | no |
+| | Stacked poster | Condensed caps stack with pointing emoji | no |
+| | Gradient minimal | One line on your brand gradient | no |
+| | Mosaic | Headline over a grid of shapes, photo crops and your logo | yes |
+| | Highlight box | Key phrase in a solid box | no |
+| | Classic: editorial, full bleed, split, band, card, centered, stats, type only | The original layouts, styled by your site's layout DNA | some |
 
-Pick one, or ask for changes ("put *together* in the gradient", "use the gradient on the button"). Nothing else is rendered until you approve.
+Pick any numbers ("1, 2 and 15"), or ask for changes first. Nothing else is rendered until you pick.
 
 ### 5. Choose where to save
 
@@ -105,7 +117,7 @@ Claude asks you to connect a folder (e.g. Downloads). In the Claude desktop app,
 
 ### 6. Review every size
 
-A contact sheet shows all sizes in your chosen style. Ask for fixes in plain words, and only that size is redone:
+A contact sheet shows every size of every option you picked. Ask for fixes in plain words, and only that size is redone:
 
 > The Pinterest pin cuts off his face, move the crop up.
 
@@ -116,17 +128,15 @@ A contact sheet shows all sizes in your chosen style. Ask for fixes in plain wor
 The folder will contain:
 
 ```
-Mariana_Johnels_IG-1x1_A.png     Meta feed 1080×1080
-Mariana_Johnels_IG-4x5_A.png     Meta feed 1080×1350
-Mariana_Johnels_STORY_A.png      Meta Stories/Reels 1080×1920
-Mariana_Johnels_LI-1x1_A.png     LinkedIn 1200×1200
-Mariana_Johnels_X_A.png          X 1600×900
-Mariana_Johnels_PT_A.png         Pinterest 1000×1500
-Mariana_Johnels_FB_A.png         Link preview 1200×630
+site/Mariana_Johnels_site_IG-1x1_A.png    One folder per option you picked
+site/Mariana_Johnels_site_IG-4x5_A.png    Meta feed 1080×1350
+site/Mariana_Johnels_site_STORY_A.png     Meta Stories/Reels 1080×1920
+headline_3_bullets/...                    (LI-1x1 1200×1200, X 1600×900, PT 1000×1500, FB 1200×630)
 Mariana_Johnels_contact-sheet.png
 Mariana_Johnels_brand-report.png  Colors, fonts, logo versions and contrast fixes used
 manifest.json                    Sizes, tracking links, captions, alt text
-concepts/                        The concept images you chose from
+Mariana_Johnels_snapshot.png     Every option you chose from
+snapshot/                        The option images
 ```
 
 `_A`, `_B` mark A/B variants (no suffix when there's only one version). Upload the images and paste the captions yourself. The skill never posts for you.
@@ -176,15 +186,18 @@ Platforms change their specs from time to time; tell Claude if you need a differ
 ```
 skills/mj-social-ad-resizer/
   SKILL.md                  Instructions Claude follows
-  scripts/make_images.py    Crops, resizes, adds text, writes the files
+  scripts/html_ads.py       Snapshot of every option, website style + HTML templates, final sizes for your picks
+  scripts/make_images.py    Classic layouts and plain photo resizing
   scripts/fetch_font.py     Downloads Google Fonts (upright + italic) for the brand profile
   scripts/fetch_site_images.py  Downloads photos from your own site when you have none
   scripts/prepare_logo.py   Finds your logo on your site or prepares an uploaded one
   references/brand.md       How the brand profile is read from a website
-  references/layouts.md     The layouts, layout DNA, and how concepts are chosen
+  references/site-style.md  How the website-style option is built from your homepage hero
+  references/templates.md   The 11 HTML templates, their copy fields and brand tokens
+  references/layouts.md     The classic layouts and layout DNA
   references/placements.md  Sizes, safe zones, caption limits
   references/spec.md        Settings the script accepts
-  assets/fonts/             Inter (default font) and its license
+  assets/fonts/             Inter (default), Instrument Serif and Oswald (companion fonts), with licenses
 ```
 
 ## License

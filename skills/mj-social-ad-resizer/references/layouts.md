@@ -1,4 +1,6 @@
-# Layouts and how to pick them
+# Classic layouts
+
+These eight layouts are drawn by `make_images.py`. The snapshot shows all of them next to the website-style option and the HTML templates (`templates.md`, `site-style.md`); the user picks.
 
 Every layout reads the brand profile: colors, fonts, motifs and the **layout DNA** in `brand.json → style` (alignment, photo shape, frames, dividers, label style, button style). The same layout looks different for each brand, and the brand's DNA decides which layouts to offer.
 
@@ -43,14 +45,8 @@ Look at the hero and the main content blocks:
 | Cards that float on dark backgrounds with deep shadows | `"shadow": true`, `dark_background` set to that dark color |
 | Colored metric tiles | `tiles`: one `{bg, fg}` per tile color |
 
-## Choosing the concepts to show
+## Which ones appear in the snapshot
 
-Pick 3–4 layouts that fit the DNA and the material. Make sure they differ from each other: don't offer three photo-on-top layouts.
-
-- **Centered, framed, serif brands** (restaurants, editorial, boutique): `card`, `centered`, `full_bleed`; add `type_only` or `stats` when there are facts.
-- **Left-aligned modern brands** (SaaS, portfolios, agencies): `editorial`, `split`, `full_bleed`; add `stats` when there are numbers.
-- **Brands with one strong solid color**: include `band`.
-- **No photo**: `card`, `centered`, `type_only`, and `stats` if there are facts.
-- **Metrics in the copy** (revenue, %, grams, minutes): include `stats`, and pass them as `facts`.
+All of them by default. Photo layouts are skipped without a photo, and `stats` without `facts`. To keep the sheet focused you can pass `"classic": [...]` in the spec, but the default is to show everything and let the user choose.
 
 `facts` show in `card`, `centered`, `stats` and `type_only`. Photo layouts skip them unless the spec sets `"facts_on_photo_layouts": true`.

@@ -71,6 +71,8 @@ Ask the user for a homepage screenshot or their brand guidelines.
 | `colors.value` | Color of fact values and emphasis words (numbers, grams, minutes) | `"#3E6B3A"` |
 | `colors.value_on_dark` / `link_on_dark` | Optional replacements on dark backgrounds. By default the brand color is used as-is on dark backgrounds and only adjusted if it fails contrast | `"#FFD166"` |
 | `colors.value_on_light` / `link_on_light` | Optional replacements for `value` / `link` on light backgrounds, for brand colors that fail contrast on white (e.g. a bright yellow). Without them, the script darkens the color automatically | `"#8A6100"` |
+| `colors.button_on_dark` / `button_text_on_dark` | Classic layouts: button fill and text on dark backgrounds (default: `on_dark` fill). Use the brand's real button color, e.g. a yellow button on navy | `"#FDB913"` / `"#00244E"` |
+| `html` | Tokens for the HTML templates and the website-style option: `ink`, `text_accent`, `dark`, `tint`, `cream`, `grad_a`/`grad_b`, `radius`, companion `fonts`, and more. All optional; derived from `colors` when missing. See `templates.md` | `{"text_accent": "#4F4CE0", "dark": "#14133D"}` |
 | `fonts.accent` | Italic or display font for taglines (used when `style.subhead_italic` is true) | `{"path": "fonts/Vollkorn-Italic_wght.ttf", "variation": "Italic"}` |
 | `fonts.wordmark` | Font for the brand name when there is no logo (defaults to `label`) | `{"path": "fonts/Vollkorn_wght.ttf", "variation": "SemiBold"}` |
 | `tiles` | Colors for `stats` tiles: list of `{bg, fg}` | `[{"bg":"#EFF6FF","fg":"#0369A1"}]` |

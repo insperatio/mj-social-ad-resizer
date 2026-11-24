@@ -254,8 +254,8 @@ def palette(brand, kind):
     if kind == "dark":
         od = rgb(c["on_dark"])
         dark_fill = rgb(c["scrim"]) if lum(c["scrim"]) < 0.2 else (10, 10, 10)
-        return {"dark": True, "text": od, "muted": mix(od, dark_fill, 0.18), "btn_bg": od,
-                "btn_fg": dark_fill, "line": mix(od, dark_fill, 0.35), "pill_text": od,
+        return {"dark": True, "text": od, "muted": mix(od, dark_fill, 0.18), "btn_bg": rgb(c.get("button_on_dark") or c["on_dark"]),
+                "btn_fg": rgb(c.get("button_text_on_dark")) if c.get("button_text_on_dark") else dark_fill, "line": mix(od, dark_fill, 0.35), "pill_text": od,
                 "link": rgb(c.get("link_on_dark") or c["link"]), "value": rgb(c.get("value_on_dark") or c["value"]), "bg": dark_fill}
     if kind == "surface":
         light = lum(c["surface"]) > 0.35
@@ -772,9 +772,12 @@ def build_block(draw, brand, variant, width, scale, pal, parts, base, hscale=1.0
     if "subhead" in parts and sub:
         y += gap(0.02)
         sf = font(F["accent"] if st.get("subhead_italic") else F["body"], max(gap(0.034), mp("body")))
-        for ln in wrap(draw, sub, sf, width)[:3]:
+        sub_lines = wrap(draw, sub, sf, width)
+        for ln in sub_lines[:3]:
             ops.append(("text", y, ln, sf, pal["muted"], 0, None, "subhead"))
             y += int(line_h(sf) * 1.12)
+        if len(sub_lines) > 3:
+            y += 10 ** 6  # never cut a subhead mid-sentence: report "doesn't fit" so it shrinks or is dropped
 
     facts = v.get("facts") or []
     if "facts" in parts and facts:
